@@ -1,0 +1,27 @@
+{
+  "id": "./index.html",
+  "name": "ToolControl iPhone · Gestión de herramientas",
+  "short_name": "ToolControl",
+  "description": "Inventario compartido de herramientas por empresa, con escaneo QR y control de administradores.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7fa",
+  "theme_color": "#102b44",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icon192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
