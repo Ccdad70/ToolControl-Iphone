@@ -18,6 +18,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Preparar versión iPhone 2.1 sin selector SMS
+        run: python3 .github/scripts/prepare_iphone.py
       - uses: actions/configure-pages@v5
         with:
           enablement: true
