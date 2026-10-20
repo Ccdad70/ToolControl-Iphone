@@ -260,4 +260,105 @@
     if(!document.hidden)void tcSmsViewerFetch(true);
   });
 
+
+  // Registro de teléfonos para administradores: mismo Supabase que Android.
+  // Safari nunca envía recordatorios silenciosos.
+  let tcAdminPhoneRows23=[],tcAdminPhoneKey23='',tcAdminPhoneLoading23=false;
+  function tcAdminPhoneNormalize23(raw){
+    const v=String(raw||'').trim().replace(/[\s().-]+/g,'');
+    if(!v)return '';
+    if(/^\d{10}$/.test(v))return '+1'+v;
+    if(/^1\d{10}$/.test(v))return '+'+v;
+    return v;
+  }
+  function tcAdminPhoneValid23(v){return !v||/^\+[1-9]\d{7,14}$/.test(v);}
+  function tcAdminPhoneFields23(){
+    return '<div class="field"><label>Teléfono del nuevo administrador (opcional)</label><input id="tcNewAdminPhone23" type="tel" inputmode="tel" autocomplete="tel" maxlength="25" placeholder="+15135550123"></div>'+
+      '<label style="display:flex;gap:9px;margin:9px 0"><input type="checkbox" id="tcNewAdminNotify23"> Recibir confirmaciones SMS cuando se avise a trabajadores con herramientas pendientes</label>'+
+      '<p class="hint">Usa código de país. Diez dígitos de EE. UU. se completan con +1. Actívalo con autorización del destinatario.</p>';
+  }
+  async function tcAdminPhoneLoad23(){
+    if(!tcClient||!tcCloudOn||!tcWorkspace||!tcUser||!navigator.onLine||tcAdminPhoneLoading23)return;
+    const key=tcUser.uid+'|'+tcWorkspace;tcAdminPhoneLoading23=true;
+    try{
+      const {data,error}=await tcClient.rpc('tc_admin_phone_list',{p_workspace:tcWorkspace});
+      if(error)throw error;
+      if(tcCloudOn&&tcUser?.uid+'|'+tcWorkspace===key){
+        tcAdminPhoneRows23=Array.isArray(data)?data:[];tcAdminPhoneKey23=key;
+      }
+    }catch(e){console.warn('No se pudieron sincronizar teléfonos administrativos',e?.message||e);}
+    finally{tcAdminPhoneLoading23=false;if(page==='cloud'&&tcCloudOn)render();}
+  }
+  async function tcAdminPhoneSave23(uid){
+    if(!tcClient||!tcCloudOn||!tcWorkspace||!navigator.onLine)return toast('Conecta el inventario para guardar el teléfono');
+    const target=tcAdmins.find(a=>a.id===uid);
+    if(!target||(uid!==tcUser?.uid&&!tcIsCompanyPrincipal()))return toast('Solo puedes modificar tu teléfono; el principal puede modificar a todos');
+    const phone=tcAdminPhoneNormalize23(document.getElementById('tcPhone23-'+uid)?.value);
+    const notify=!!document.getElementById('tcNotify23-'+uid)?.checked;
+    if(!tcAdminPhoneValid23(phone))return toast('Teléfono inválido: indica + código de país y 8 a 15 dígitos');
+    if(notify&&!phone)return toast('Primero registra el teléfono');
+    try{
+      const {error}=await tcClient.rpc('tc_admin_phone_save',{p_workspace:tcWorkspace,p_target:uid,p_phone:phone,p_notify:notify});
+      if(error)throw error;
+      toast('Teléfono guardado para '+target.name);
+      await tcAdminPhoneLoad23();
+    }catch(e){toast('No se pudo guardar: '+tcStringErr(e));}
+  }
+  function tcAdminPhoneView23(){
+    if(!tcCloudOn||!tcUser)return '';
+    const currentKey=tcUser.uid+'|'+tcWorkspace;
+    const loaded=tcAdminPhoneKey23===currentKey;
+    const allowed=tcAdmins.filter(a=>a.id===tcUser.uid||tcIsCompanyPrincipal());
+    return '<div class="card"><h3>📞 Teléfonos de administradores</h3>'+
+      '<p class="hint">Cada administrador puede guardar su número; la cuenta principal puede gestionar todos. Los avisos se enviarán únicamente desde el Android encargado y solo a números con avisos activados.</p>'+
+      (!loaded?'<p class="hint">Sincronizando teléfonos con Supabase…</p>':'')+
+      allowed.map(a=>{
+        const row=tcAdminPhoneRows23.find(x=>x.user_id===a.id);
+        const phone=loaded?row?.phone_e164||'':'';
+        const receive=!!(loaded&&row?.notify_reminders);
+        return '<div style="padding:12px 0;border-top:1px solid #e4e9eb"><strong>'+esc(a.name)+'</strong>'+
+          (a.is_self?' · Tú':'')+
+          '<div class="field"><label>Número de teléfono</label><input id="tcPhone23-'+esc(a.id)+'" type="tel" inputmode="tel" maxlength="25" placeholder="+15135550123" value="'+esc(phone)+'"></div>'+
+          '<label style="display:flex;gap:9px;margin:9px 0"><input id="tcNotify23-'+esc(a.id)+'" type="checkbox" '+(receive?'checked':'')+'> Recibir SMS cuando se envíen recordatorios</label>'+
+          '<button type="button" class="btn outline" onclick="tcAdminPhoneSave23(\''+esc(a.id)+'\')">Guardar teléfono de '+esc(a.name)+'</button></div>';
+      }).join('')+
+      '<button type="button" class="btn secondary block" onclick="tcAdminPhoneLoad23()">↻ Actualizar teléfonos</button></div>';
+  }
+  // El código de iPhone no tiene servicio de SMS: es una pantalla de administración.
+  const tcAdminManageViewBeforePhones23=tcAdminManageView;
+  tcAdminManageView=function(){
+    const html=tcAdminManageViewBeforePhones23();
+    const btn='<button class="btn primary block" onclick="tcCreateAdmin()">';
+    return (html.includes(btn)?html.replace(btn,tcAdminPhoneFields23()+btn):html)+tcAdminPhoneView23();
+  };
+  const tcLoadAdminsBeforePhones23=tcLoadAdmins;
+  tcLoadAdmins=async function(...args){
+    const value=await tcLoadAdminsBeforePhones23(...args);
+    if(tcCloudOn&&tcUser)await tcAdminPhoneLoad23();
+    return value;
+  };
+  const tcCreateAdminBeforePhones23=tcCreateAdmin;
+  tcCreateAdmin=async function(...args){
+    const username=(document.getElementById('tcNewUsername')?.value||'').trim().toLowerCase();
+    const phone=tcAdminPhoneNormalize23(document.getElementById('tcNewAdminPhone23')?.value);
+    const notify=!!document.getElementById('tcNewAdminNotify23')?.checked;
+    if(!tcAdminPhoneValid23(phone))return toast('Teléfono inválido: usa + código país y número');
+    if(notify&&!phone)return toast('Registra un teléfono antes de activar los avisos');
+    const existed=tcAdmins.some(a=>a.username===username);
+    await tcCreateAdminBeforePhones23(...args);
+    if(!existed&&username&&(phone||notify)){
+      const created=tcAdmins.find(a=>a.username===username);
+      if(created){
+        try{
+          const {error}=await tcClient.rpc('tc_admin_phone_save',{p_workspace:tcWorkspace,p_target:created.id,p_phone:phone,p_notify:notify});
+          if(error)throw error;
+          await tcAdminPhoneLoad23();
+          toast('Administrador y teléfono registrados correctamente');
+        }catch(e){toast('Administrador creado, pero revisa su teléfono: '+tcStringErr(e));}
+      }
+    }
+  };
+  window.tcAdminPhoneSave23=tcAdminPhoneSave23;
+  window.tcAdminPhoneLoad23=tcAdminPhoneLoad23;
+
 })();
