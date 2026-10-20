@@ -18,8 +18,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Preparar versión iPhone 2.1 sin selector SMS
+      - name: Preparar versión iPhone 2.2 sin selector de envío SMS
         run: python3 .github/scripts/prepare_iphone.py
+      - name: Validar JavaScript y caché de iPhone
+        run: |
+          node --check tc-iphone-updates-2.2.js
+          node --check sw.js
+          grep -q "tc_admin_phone_save" tc-iphone-updates-2.2.js
+          grep -q "tcSmsViewerFetch" tc-iphone-updates-2.2.js
       - uses: actions/configure-pages@v5
         with:
           enablement: true
