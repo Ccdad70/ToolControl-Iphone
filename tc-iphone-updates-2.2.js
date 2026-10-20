@@ -156,4 +156,108 @@
       if(showSummary)toast(message,'ok');
     });
   };
+
+  // iPhone: indicador de SMS de solo lectura sincronizado con el mismo Supabase de Android.
+  // No solicita autorización ni intenta enviar SMS desde Safari.
+  const tcSmsViewer={key:'',owner:null,status:'loading',busy:false,last:0};
+  const tcSmsDummyDevice='00000000-0000-0000-0000-000000000000';
+
+  function tcSmsViewerScope(){
+    if(typeof tcDenied!=='undefined' && tcDenied)return '';
+    return tcClient&&tcCloudOn&&tcWorkspace&&tcUser?.uid
+      ? tcUser.uid+'|'+tcWorkspace : '';
+  }
+  function tcSmsViewerBody(){
+    let state;
+    if(tcSmsViewer.status==='ready'){
+      state=tcSmsViewer.owner
+        ? '<p style="margin:8px 0;color:#116149">🔒 <strong>SMS asignados a: '+esc(tcSmsViewer.owner)+'</strong></p><p class="hint">Solo el teléfono Android autorizado puede enviar los recordatorios.</p>'
+        : '<p style="margin:8px 0;color:#116149">🟢 <strong>No hay un encargado SMS activo.</strong></p><p class="hint">Un administrador podrá solicitar la autorización desde Android.</p>';
+    }else if(tcSmsViewer.status==='offline'){
+      state='<p class="hint">⚠️ Sin conexión. No se puede confirmar el encargado actual.</p>';
+    }else if(tcSmsViewer.status==='error'){
+      state='<p class="hint">⚠️ No se pudo consultar la autorización SMS en Supabase. Comprueba la conexión y vuelve a intentar.</p>';
+    }else{
+      state='<p class="hint">⏳ Consultando quién tiene autorizado el envío de SMS…</p>';
+    }
+    return '<h3>📲 Encargado de mensajes SMS</h3>'+state+
+      '<p class="hint">Estado compartido con ToolControl Android. Se consulta automáticamente cada 15 segundos mientras esté abierta la aplicación.</p>'+
+      '<button type="button" class="btn outline" onclick="tcSmsViewerRefreshNow()">↻ Actualizar estado SMS</button>';
+  }
+  function tcSmsViewerPaint(){
+    const html=tcSmsViewerBody();
+    document.querySelectorAll('[data-tc-sms-viewer]').forEach(el=>{
+      if(el.innerHTML!==html)el.innerHTML=html;
+    });
+  }
+  function tcSmsViewerStart(){
+    const key=tcSmsViewerScope();
+    if(!key)return;
+    if(key!==tcSmsViewer.key){
+      tcSmsViewer.key=key;tcSmsViewer.owner=null;
+      tcSmsViewer.status='loading';tcSmsViewer.last=0;
+      setTimeout(()=>{void tcSmsViewerFetch(true);},0);
+    }
+  }
+  async function tcSmsViewerFetch(force=false){
+    const key=tcSmsViewerScope();
+    if(!key){
+      tcSmsViewer.key='';tcSmsViewer.owner=null;
+      tcSmsViewer.status='loading';return;
+    }
+    if(key!==tcSmsViewer.key){
+      tcSmsViewer.key=key;tcSmsViewer.owner=null;
+      tcSmsViewer.status='loading';tcSmsViewer.last=0;
+    }
+    if(tcSmsViewer.busy)return;
+    if(!navigator.onLine){
+      tcSmsViewer.owner=null;tcSmsViewer.status='offline';
+      tcSmsViewerPaint();return;
+    }
+    if(!force && Date.now()-tcSmsViewer.last<14000)return;
+    tcSmsViewer.busy=true;tcSmsViewer.last=Date.now();
+    try{
+      const workspace=tcWorkspace;
+      const result=await tcClient.rpc('tc_sms_current',{
+        p_workspace:workspace,p_device:tcSmsDummyDevice
+      });
+      if(tcSmsViewerScope()!==key)return;
+      if(result.error)throw result.error;
+      const record=Array.isArray(result.data)?result.data[0]:null;
+      tcSmsViewer.owner=record?.owner_uid ? String(record.owner_name||'Administrador') : null;
+      tcSmsViewer.status='ready';
+    }catch(e){
+      if(tcSmsViewerScope()===key){
+        tcSmsViewer.owner=null;tcSmsViewer.status='error';
+      }
+    }finally{
+      tcSmsViewer.busy=false;
+      if(tcSmsViewerScope()===key)tcSmsViewerPaint();
+    }
+  }
+  window.tcSmsViewerRefreshNow=function(){void tcSmsViewerFetch(true);};
+  const tcSmsCloudViewBefore=tcCloudView;
+  tcCloudView=function(){
+    const content=tcSmsCloudViewBefore();
+    if(!tcSmsViewerScope())return content;
+    tcSmsViewerStart();
+    return '<section class="card" data-tc-sms-viewer="1" role="status">'+tcSmsViewerBody()+'</section>'+content;
+  };
+  const tcSmsHomeViewBefore=homeView;
+  homeView=function(){
+    const content=tcSmsHomeViewBefore();
+    if(!tcSmsViewerScope())return content;
+    tcSmsViewerStart();
+    return '<section class="card" data-tc-sms-viewer="1" role="status">'+tcSmsViewerBody()+'</section>'+content;
+  };
+  setInterval(()=>{if(!document.hidden)void tcSmsViewerFetch();},15000);
+  window.addEventListener('focus',()=>{void tcSmsViewerFetch(true);});
+  window.addEventListener('online',()=>{void tcSmsViewerFetch(true);});
+  window.addEventListener('offline',()=>{
+    tcSmsViewer.owner=null;tcSmsViewer.status='offline';tcSmsViewerPaint();
+  });
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden)void tcSmsViewerFetch(true);
+  });
+
 })();

@@ -1,5 +1,5 @@
 // ToolControl iPhone: cache de la aplicación, no sesiones ni respuestas privadas de Supabase.
-const CACHE='toolcontrol-iphone-2-2-v1';
+const CACHE='toolcontrol-iphone-2-2-sms-sync-v1';
 const SHELL=['./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js'];
 self.addEventListener('install',event=>event.waitUntil(
   caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())
@@ -15,6 +15,12 @@ self.addEventListener('fetch',event=>{
   if(event.request.mode==='navigate'){
    try{const live=await fetch(event.request);if(live.ok)cache.put('./index.html',live.clone());return live}
    catch{return(await cache.match('./index.html'))||Response.error()}
+  }
+  if(u.pathname.endsWith('/tc-iphone-updates-2.2.js')){
+   try{
+    const live=await fetch(event.request);
+    if(live.ok){await cache.put(event.request,live.clone());return live}
+   }catch(e){}
   }
   return (await cache.match(event.request))||fetch(event.request);
  })());
