@@ -23,6 +23,8 @@ jobs:
       - name: Validar JavaScript y caché de iPhone
         run: |
           node --check tc-iphone-updates-2.2.js
+          node --check tc-iphone-followup-2.4.js
+          grep -q 'tc_followup_list' tc-iphone-followup-2.4.js
           node --check sw.js
           grep -q "tc_admin_phone_save" tc-iphone-updates-2.2.js
           grep -q "tcSmsViewerFetch" tc-iphone-updates-2.2.js

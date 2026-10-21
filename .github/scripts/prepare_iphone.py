@@ -11,7 +11,7 @@ s=s.replace(a,'<p class="hint">La autorización para enviar SMS se asigna desde 
 a="function tcSetPrimarySms(yes){if(!tcWorkspace)return toast('Primero conecta el inventario');localStorage.setItem('tc-sms-primary-'+tcWorkspace,yes?'yes':'no');syncSmsReminders();toast(yes?'Este celular enviará los SMS':'SMS desactivados en este teléfono')}"
 assert s.count(a)==1
 s=s.replace(a,"function tcSetPrimarySms(yes){return toast('La autorización de envío SMS se administra desde Android. El encargado se consulta en Supabase.');}")
-assert 'tc_delete_retired_tool' in s and 'Versión 2.2' in s
+assert 'tc_delete_retired_tool' in s and 'Versión 2.4' in s
 assert 'onchange="tcSetPrimarySms(this.checked)"' not in s
 p.write_text(s,encoding='utf-8')
 print('ToolControl iPhone 2.2: SMS sincronizado con Android, sin selector de envío')
