@@ -1,0 +1,433 @@
+TOTAL SIZE 1055367 LINES 2293
+
+### function inventoryView 1
+OFFSET 966385 LINE 1468
+an style="font-size:22px">📄</span><div class="item-main"><strong>Reportes y copia de seguridad</strong><small>Excel/CSV, PDF e información guardada</small></div><span>›</span></div></div>`}
+function inventoryView(){let list=state.tools.filter(t=>((toolFilter==='all'&&t.status!=='retired')||(toolFilter==='overdue'?overdue(t):t.status===toolFilter))&&`${t.name} ${t.code} ${t.brand||''} ${person(t.personId)?.name||''}`.toLowerCase().includes(inventorySearch.toLowerCase()));return `<div class="toolbar"><input id="inventorySearch" placeholder="Buscar nombre, código o responsable" value="${esc(inventorySearch)}" oninput="inventorySearch=this.value;renderInventoryItems()"><button class="btn primary tiny" onclick="go('toolnew')">+ Nueva</button></div><div class="pillbar">${[['all','Todas'],['available','Disponibles'],['assigned','Asignadas'],['overdue','Vencidas'],['damaged','Dañadas'],['retired','Retiradas'],['lost','Extraviadas']].map(([k,v])=>`<button class="pill ${toolFilter===k?'active':''}" onclick="toolFilter='${k}';render()">${v}</button>`).join('')}</div><div class="card" id="inventoryItems">${toolsHtml(list)}</div>`}
+function renderInventoryItems(){const l=state.tools.filter(t=>((toolFilter==='all'&&t.status!=='retired')||(toolFilter==='overdue'?overdue(t):t.status===toolFilter))&&`${t.name} ${t.code} ${t.brand||''} ${person(t.personId)?.name||''}`.toLowerCase().includes(inventorySearch.toLowerCase()));$('inventoryItems').innerHTML=toolsHtml(l)}
+function toolsHtml(list){return list.length?list.map(t=>`<div class="item" onclick="showTool('${t.id}')" role="button" style="cursor:pointer;flex-wrap:wrap;gap:8px">${t.photo?`<img class="preview" src="${t.photo}" alt="Fotografía de ${esc(t.name)}">`:'<div class="no-photo">🛠️</div>'}<div class="item-main"><strong>${esc(t.name)}</strong><small>${esc(t.code)}${t.personId?' · '+esc(person(t.personId)?.name||'Exempleado'):''}</small></div>${statusLabel(t)}${t.status==='available'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();markDamaged('${t.id}')">⚠️ Marcar dañada</button>`:''}${t.status==='damaged'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();showTool('${t.id}')">🔧 Reparar o retirar</button>`:''}${t.status==='retired'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto;color:#a32424;border-color:#d5aaaa" onclick="event.stopPropagation();deleteRetiredTool('${t.id}')">🗑️ Eliminar herramienta</button>`:''}</div>`).join(''):empty('No se encontraron herramientas')}
+function peopleView(){return `<button class="btn primary block" onclick="showPersonEditor()">+ Registrar trabajador</button><div style="height:13px"></div><div class="card">${state.people.length?state.people.map(p=>{let list=state.tools.filter(t=>t.personId===p.id&&t.status==='assigned');return `<div class="item" onclick="showPerson('${p.id}')" role="button" style="cursor:pointer"><div class="no-photo" style="width:49px;height:49px;font-size:22px">👷</div><div class="item-main"><strong>${esc(p.name)}</strong><small>${esc(p.code||'')}${p.company?' · '+esc(p.company):''}</small></div><span class="status ${list.length?'assigned':''}">${list.length} asignadas</span></div>`}).join(''):empty('Registra el primer trabajador para asignar herramientas')}</div>`}
+function alertView(){let list=alarms();return `<div class="card"><div class="card-head"><h3>🔔 Alertas activas</h3><b>${list.length}</b></div><p class="hint">Los vencimientos aparecen aquí automáticamente. En la aplicación Android recibirás un aviso del sistema si permites notificaciones.</p></div>${list.lengt
+
+### function renderInventoryItems 1
+OFFSET 967332 LINE 1469
+v])=>`<button class="pill ${toolFilter===k?'active':''}" onclick="toolFilter='${k}';render()">${v}</button>`).join('')}</div><div class="card" id="inventoryItems">${toolsHtml(list)}</div>`}
+function renderInventoryItems(){const l=state.tools.filter(t=>((toolFilter==='all'&&t.status!=='retired')||(toolFilter==='overdue'?overdue(t):t.status===toolFilter))&&`${t.name} ${t.code} ${t.brand||''} ${person(t.personId)?.name||''}`.toLowerCase().includes(inventorySearch.toLowerCase()));$('inventoryItems').innerHTML=toolsHtml(l)}
+function toolsHtml(list){return list.length?list.map(t=>`<div class="item" onclick="showTool('${t.id}')" role="button" style="cursor:pointer;flex-wrap:wrap;gap:8px">${t.photo?`<img class="preview" src="${t.photo}" alt="Fotografía de ${esc(t.name)}">`:'<div class="no-photo">🛠️</div>'}<div class="item-main"><strong>${esc(t.name)}</strong><small>${esc(t.code)}${t.personId?' · '+esc(person(t.personId)?.name||'Exempleado'):''}</small></div>${statusLabel(t)}${t.status==='available'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();markDamaged('${t.id}')">⚠️ Marcar dañada</button>`:''}${t.status==='damaged'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();showTool('${t.id}')">🔧 Reparar o retirar</button>`:''}${t.status==='retired'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto;color:#a32424;border-color:#d5aaaa" onclick="event.stopPropagation();deleteRetiredTool('${t.id}')">🗑️ Eliminar herramienta</button>`:''}</div>`).join(''):empty('No se encontraron herramientas')}
+function peopleView(){return `<button class="btn primary block" onclick="showPersonEditor()">+ Registrar trabajador</button><div style="height:13px"></div><div class="card">${state.people.length?state.people.map(p=>{let list=state.tools.filter(t=>t.personId===p.id&&t.status==='assigned');return `<div class="item" onclick="showPerson('${p.id}')" role="button" style="cursor:pointer"><div class="no-photo" style="width:49px;height:49px;font-size:22px">👷</div><div class="item-main"><strong>${esc(p.name)}</strong><small>${esc(p.code||'')}${p.company?' · '+esc(p.company):''}</small></div><span class="status ${list.length?'assigned':''}">${list.length} asignadas</span></div>`}).join(''):empty('Registra el primer trabajador para asignar herramientas')}</div>`}
+function alertView(){let list=alarms();return `<div class="card"><div class="card-head"><h3>🔔 Alertas activas</h3><b>${list.length}</b></div><p class="hint">Los vencimientos aparecen aquí automáticamente. En la aplicación Android recibirás un aviso del sistema si permites notificaciones.</p></div>${list.length?list.sort((a,b)=>dueDate(a.due)-dueDate(b.due)).map(t=>`<div class="alert-card ${overdue(t)?'red':''}" onclick="showTool('${t.id}')" style="cursor:pointer"><span style="font-size:22px">${overdue(t)?'🚨':'⏳'}</span><div><strong>${esc(t.name)} · ${esc(t.code)}</strong><p>${esc(person(t.personId)?.name||'Responsable desconocido')} · ${overdue(t)?'¡Devolución vencida!':'Se devuelve hoy'} (${dateText(t.due)})</p></div></div>`).join(''):empty('No hay devoluciones vencidas ni pendientes para hoy')}<div class="btnrow"><button class="btn secondary" onclick="enableAlerts()">🔔 Activar notificaciones</button></div>`}
+function toolNewView(){photoData='';editId=null;return toolForm()}
+function toolForm(t){t=t||{};return `<form id="toolForm" onsubmit="saveTool(event)"><div class="card"><div class="field"><label>Nombre de herramienta *</label><input id="toolName" maxlength="100" required placeholder="Ej.: Taladro DeWalt 20V" value="${esc(t.name||''
+
+### function toolsHtml 1
+OFFSET 967667 LINE 1470
+tatus===toolFilter))&&`${t.name} ${t.code} ${t.brand||''} ${person(t.personId)?.name||''}`.toLowerCase().includes(inventorySearch.toLowerCase()));$('inventoryItems').innerHTML=toolsHtml(l)}
+function toolsHtml(list){return list.length?list.map(t=>`<div class="item" onclick="showTool('${t.id}')" role="button" style="cursor:pointer;flex-wrap:wrap;gap:8px">${t.photo?`<img class="preview" src="${t.photo}" alt="Fotografía de ${esc(t.name)}">`:'<div class="no-photo">🛠️</div>'}<div class="item-main"><strong>${esc(t.name)}</strong><small>${esc(t.code)}${t.personId?' · '+esc(person(t.personId)?.name||'Exempleado'):''}</small></div>${statusLabel(t)}${t.status==='available'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();markDamaged('${t.id}')">⚠️ Marcar dañada</button>`:''}${t.status==='damaged'?`<button class="btn outline" style="font-size:12px;padding:7px 10px;min-width:auto;flex-basis:100%;margin-left:auto" onclick="event.stopPropagation();showTool('${t.id}')">🔧 Reparar o retirar</
+
+### function openScan 0
+
+### function closeScan 1
+OFFSET 1013896 LINE 1831
+e){const f=scanDone;scanDone=null;f(String(value||''));toast('Código escaneado')}};
+window.nativeScanFailed=function(msg){toast(msg||'No se pudo escanear. Escribe el código manualmente.')};
+function closeScan(){if(scanTimer){cancelAnimationFrame(scanTimer);scanTimer=null}if(scanReader?.stopContinuousDecode)try{scanReader.stopContinuousDecode();scanReader.reset?.()}catch(e){}if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null}scanReader=null;const target=$('scanModal');if(target)target.remove()}
+async function openBrowserScanner(){
+  closeScan();
+  const dialog=document.createElement('div');dialog.id='scanModal';dialog.className='sheetbg';dialog.style.zIndex='95';
+  dialog.innerHTML='<div class="sheet"><div class="sheet-title"><h2>Escanear QR o código de barras</h2><button class="x" onclick="closeScan()">×</button></div><video id="scanVideo" autoplay playsinline muted style="width:100%;border-radius:13px;background:#1b2730;min-height:180px"></video><p class="hint" id="scanHint">Solicitando acceso a la cámara trasera…</p><div class="btnrow"><button class="btn secondary" onclick="$(\'scanImageInput\').click()">📷 Leer desde foto</button><button class="btn outline" onclick="closeScan();toast(\'Puedes escribir el código manualmente.\')">Escribir manualmente</button></div></div>';
+  document.body.appendChild(dialog);
+  const hint=$('scanHint');
+  if(!navigator.mediaDevices?.getUserMedia){hint.textContent='La cámara necesita una página HTTPS en Safari. Puedes introducir el código manualmente.';return;}
+  try{
+    const nativeAvailable=typeof BarcodeDetector!=='undefined';
+    if(!nativeAvailable && !(await tcLoadZxing())){hint.textContent='No se pudo cargar el lector QR. Comprueba internet o escribe el código.';return;}
+    if(!$('scanVideo'))return;
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const video=$('scanVideo');if(!video)return closeScan();
+    video.srcObject=scanStream;await video.play();
+    const acceptCode=raw=>{const result=String(raw||'').trim();if(!result)return;closeScan();if(scanDone){const done=scanDone;scanDone=null;done(result)}playScanBeep();toast('Código escaneado')};
+    hint.textContent='Cámara lista. Acerca el QR o código de barras.';
+    if(!nativeAvailable){tcStartZxing(video,acceptCode);return;}
+    scanReader=new BarcodeDetector();
+    let detecting=false;
+    const scanFrame=async()=>{
+      const v=$('scanVideo');if(!v||!scanReader)return;
+      if(!detecting&&v.readyState>=2){detecting=true;try{const hits=await scanReader.detect(v);if(hits?.[0]?.rawValue)return acceptCode(hits[0].rawValue)}catch(e){}detecting=false;}
+      scanTimer=requestAnimationFrame(scanFrame);
+    };scanFrame();
+  }catch(e){if($('scanHint'))$('scanHint').textContent='No se pudo acceder a la cámara. En Safari permite Cámara y vuelve a intentar; también puedes escribir el código.';}
+}
+$('scanImageInput').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];e.target.value='';if(!file)return;
+  const imageUrl=URL.createObjectURL(file);
+  try{
+    let text='';
+    if(typeof BarcodeDetector!=='undefined'){
+      const img=await createImageBitmap(file),hits=await new BarcodeDetector().detect(img);
+      text=hits?.[0]?.rawValue||'';
+    }else if(await tcLoadZxing()){
+      const decoder=new window.ZXing.BrowserMultiFormatReader();
+      try{const result=await decoder.decodeFromImageUrl(imageUrl);text=result?.getText?.()||''}
+      finally{decoder.reset?.()}
+    }
+    if(!text)return toast('No se detectó un código. Prueba otra foto o escríbelo.');
+    closeScan();if(scanDone){const done=scanDone;scanDone=null;done(String(text).trim())}playScanBeep();toast('Código reconocido');
+  }catch(err){toast('No se pudo leer esa f
+
+### function receiveContinuousCode 1
+OFFSET 978185 LINE 1510
+add(t.id);session.last=t.name;
+  scanResult('✓ Asignada: '+t.name,'ok');
+  if($('lastDelivery'))$('lastDelivery').textContent=session.count+' herramientas a '+p.name+' · última: '+t.name;
+}
+function receiveContinuousCode(code){
+  const session=continuousSession;
+  if(!session?.active)return;
+  const cleaned=String(code||'').trim();if(!cleaned)return;
+  // Serializa guardados: dos códigos seguidos no pueden pisarse durante una escritura IndexedDB.
+  continuousPromise=continuousPromise.then(()=>session.mode==='return'?returnScannedCode(cleaned,session):assignScannedCode(cleaned,session)).catch(err=>scanResult('Error al procesar: '+err.message,'error'));
+}
+window.receiveContinuousScan=receiveContinuousCode;
+async function addManualAssignment(){
+  const chosen=person($('assignPerson')?.value);
+  if(!chosen)return toast('Primero selecciona un trabajador.');
+  if(continuousSession?.active)return toast('Finaliza el escaneo continuo primero.');
+  const input=$('assignManual'),code=input?.value.trim();if(!code)return toast('Escribe el código.');
+  const session={personId:chosen.id,d
+
+### function scanCode 0
+
+### function openContinuousBrowserScanner 1
+OFFSET 981922 LINE 1570
+anualContinuousSubmit(){
+  const i=$('continuousManual');
+  const code=i?.value.trim();
+  if(!code || !continuousSession?.active)return;
+  i.value='';
+  receiveContinuousCode(code);
+}
+async function openContinuousBrowserScanner(){
+  closeScan();
+  if(!continuousSession?.active)return;
+  const d=document.createElement('div');d.id='scanModal';d.className='sheetbg scanfullscreen';
+  d.innerHTML=`<div class="sheet"><div class="sheet-title"><h2>${continuousSession.mode==='return'?'Recepción continua':'Entrega continua'} 🔊</h2><button class="x" onclick="finishContinuousScan()" aria-label="Finalizar">×</button></div><p class="hint">Trabajador: <b>${esc(continuousSession.personName)}</b></p><video id="scanVideo" autoplay playsinline muted></video><p class="scan-status" id="continuousStatus" role="status">Solicitando acceso a la cámara…</p><div class="scan-counter"><b id="continuousCount">0</b> herramientas ${continuousSession.mode==='return'?'recibidas':'asignadas'}</div><div class="field"><label>Ingresar código manualmente (alternativa)</label><div class="inputscan"><input id="continuousManual" placeholder="Código de herramienta" onkeydown="if(event.key==='Enter'){event.preventDefault();manualContinuousSubmit()}"><button type="button" onclick="manualContinuousSubmit()">+</button></div></div><button class="btn primary block" onclick="finishContinuousScan()">✓ Finalizar ${continuousSession.mode==='return'?'recepción':'entrega'}</button></div>`;
+  document.body.appendChild(d);
+  if(!navigator.mediaDevices?.getUserMedia){
+    scanResult('Este navegador no permite acceder a la cámara desde aquí. Abre ToolControl en Chrome mediante HTTPS o usa la app Android instalada. También puedes introducir códigos manualmente.','error');
+    return;
+  }
+  try{
+    // Intentar abrir la cámara siempre, aunque la API BarcodeDetector no esté disponible.
+    // Antes se comprobaba BarcodeDetector primero y se omitía por completo el acceso a la cámara.
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const video=$('scanVideo');if(!video||!continuousSession?.active)return closeScan();
+    video.srcObject=scanStream;
+    await video.play();
+    if(typeof BarcodeDetector==='undefined'){
+      scanResult('Preparando lector QR y código de barras compatible con iPhone…','');
+      if(await tcLoadZxing()){
+        if(!continuousSession?.active || !$('scanVideo'))return closeScan();
+        tcStartZxing(video, code=>{
+          if(!continuousSession?.active)return;
+          // Allow a re-read after the cooldown; original per-session duplicate validation still applies.
+          const at=Date.now(),last=continuousCodeTimes.get(code)||0;
+          if(at-last<1200)return;
+          continuousCodeTimes.set(code,at);
+          receiveContinuousCode(code);
+        });
+        scanResult('Lector iPhone listo: apunta a QR o código de barras.','');
+      }else{
+        scanResult('No se pudo cargar el lector. Revisa tu internet o escribe el código manualmente.','error');
+      }
+      return;
+    }
+    const preferred=['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','codabar','data_matrix','pdf417'];
+    let formats=preferred;
+    if(typeof BarcodeDetector.getSupportedFormats==='function'){
+      try{const supported=await BarcodeDetector.getSupportedFormats();formats=preferred.filter(f=>supported.includes(f));}catch(e){}
+    }
+    try{scanReader=formats.length?new BarcodeDetector({formats}):new BarcodeDetector()}
+    catch(err){scanReader=new BarcodeDetector()}
+    scanResult('Cámara lista: enfoca un código de barras o QR. La lectura se verificará automáticamente.','');
+    let detecting=false;
+    const scanFrame=async()=>{
+      const v=$('scanVideo');if(!v||!scanReader||!con
+
+### function receiveNativeScan 0
+
+### function showTool 1
+OFFSET 994564 LINE 1699
+loseModal()">×</button></div>${body}</div>`}
+function closeModal(){if(continuousSession?.active)stopContinuousSession(false);closeScan();$('modal').className='hide';$('modal').innerHTML=''}
+function showTool(id){const t=state.tools.find(x=>x.id===id);if(!t)return;let p=person(t.personId);
+modal(`<div class="details"><div style="text-align:center">${t.photo?`<img src="${t.photo}" alt="${esc(t.name)}" style="max-width:100%;max-height:200px;object-fit:contain;border-radius:13px">`: '<div style="font-size:55px">🛠️</div>'}</div><h2>${esc(t.name)}</h2>${statusLabel(t)}<p><b>Código:</b> ${esc(t.code)}</p><p><b>Marca:</b> ${esc(t.brand||'—')}</p><p><b>Modelo o serie:</b> ${esc(t.serial||'—')}</p>${p?`<p><b>Responsable:</b> ${esc(p.name)}</p><p><b>Entrega:</b> ${dateTime(t.assignedAt)}</p><p><b>Devolución esperada:</b> ${dateText(t.due)}</p>`:''}${t.status==='damaged'?`<p><b>Daño reportado:</b> ${esc(t.damageReason||'Sin observaciones')}</p><p><b>Fecha del reporte:</b> ${dateTime(t.damagedAt)}</p>`:''}${t.status==='retired'?`<p><b>Retirada por reemplazo:</b> ${dateTime(t.retiredAt)}
+
+### function render\( 1
+OFFSET 815103 LINE 1461
+>`}
+function tcHideSplash(){const e=document.getElementById('tcSplash');if(!e?.classList?.add)return;e.classList.add('hidden');setTimeout(()=>e.remove(),400)}
+setTimeout(tcHideSplash,2900);
+function render(){const heads={home:['Todo bajo control.','Cada herramienta, en buenas manos.'],inventory:['Inventario','Herramientas registradas'],people:['Trabajadores','Personas responsables'],alerts:['Alertas','Herramientas que requieren atención'],assign:['Entregar herramientas','Registrar responsable'],return:['Recibir herramientas','Registrar devolución'],toolnew:['Nueva herramienta','Foto, código y nombre'],history:['Movimientos','Historial de entregas y devoluciones'],report:['Reportes y respaldo','Exportar o proteger tus datos'],sms:['Recordatorios por SMS','Antes de finalizar la jornada'],about:['Acerca de ToolControl','Créditos e identidad del proyecto']};let title=heads[page]||heads.home;$('heading').textContent=title[0];$('subtitle').textContent=title[1];$('bellcount').style.display=alarms().length?'block':'none';$('bellcount').textContent=alarms().length;
+$('bottomnav').in
+
+### function saveTool 1
+OFFSET 972354 LINE 1476
+de(){let n=Math.max(0,...state.tools.map(t=>{const m=String(t.code).match(/^TC-(\d+)$/);return m?+m[1]:0}));let c;do{c='TC-'+String(++n).padStart(5,'0')}while(toolByCode(c));return c}
+async function saveTool(ev){ev.preventDefault();const name=$('toolName').value.trim(), code=($('toolCode').value.trim()||(!editId?nextCode():state.tools.find(x=>x.id===editId)?.code)||'').trim();if(!name||!code)return toast('Escribe el nombre.');if(state.tools.some(x=>x.code.toLowerCase()===code.toLowerCase()&&x.id!==editId))return toast('Ese código ya corresponde a otra herramienta.');let t=editId?state.tools.find(x=>x.id===editId):null;if(!t){t={id:newId(),status:'available',personId:null,assignedAt:null,due:'',notes:''};state.tools.push(t);logMove('registro',t,null,'Herramienta registrada')}Object.assign(t,{name,code,brand:$('toolBrand').value.trim(),serial:$('toolSerial').value.trim(),photo:photoData||t.photo||''});if(!await save())return toast('No se pudo guardar. Revisa la conexión o el conflicto.');go('inventory');toast('Herramienta guardada correctamente')}
+function photoPicked(input){
+
+### let database= 1
+OFFSET 663543 LINE 1442
+.exponentialRampToValueAtTime(0.0001,start+0.105);
+    oscillator.connect(gain);gain.connect(scanAudio.destination);
+    oscillator.start(start);oscillator.stop(start+0.11);
+  }catch(e){}
+}
+let database=null, state={tools:[],people:[],history:[],settings:{}}, page='home', toolFilter='all', inventorySearch='',scanDone=null, scanStream=null, scanTimer=null, scanReader=null, queue=[], continuousSession=null, continuousPromise=Promise.resolve(), continuousCodeTimes=new Map(), photoData='', editId=null, saveCounter=0;
+const allTools=()=>state.tools, person=id=>state.people.find(x=>x.id===id), toolByCode=c=>state.tools.find(x=>x.code.toUpperCase()===String(c||'').trim().toUpperCase()), countStatus=s=>state.tools.filter(x=>x.status===s).length;
+const dueDate=d=>d?new Date(d+'T17:00:00').getTime():Infinity;
+const overdue=t=>t.status==='assigned'&&!!t.due&&dueDate(t.due)<Date.now();
+const dueToday=t=>t.status==='assigned'&&t.due===today();
+const alarms=()=>state.tools.filter(t=>overdue(t)||dueToday(t));
+const dateText=d=>d?new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digi
+
+### const allTools= 1
+OFFSET 663872 LINE 1443
+Stream=null, scanTimer=null, scanReader=null, queue=[], continuousSession=null, continuousPromise=Promise.resolve(), continuousCodeTimes=new Map(), photoData='', editId=null, saveCounter=0;
+const allTools=()=>state.tools, person=id=>state.people.find(x=>x.id===id), toolByCode=c=>state.tools.find(x=>x.code.toUpperCase()===String(c||'').trim().toUpperCase()), countStatus=s=>state.tools.filter(x=>x.status===s).length;
+const dueDate=d=>d?new Date(d+'T17:00:00').getTime():Infinity;
+const overdue=t=>t.status==='assigned'&&!!t.due&&dueDate(t.due)<Date.now();
+const dueToday=t=>t.status==='assigned'&&t.due===today();
+const alarms=()=>state.tools.filter(t=>overdue(t)||dueToday(t));
+const dateText=d=>d?new Date(d+'T12:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}):'Sin fecha';
+const dateTime=d=>d?new Date(d).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'—';
+const statusLabel=t=>overdue(t)?'<span class="status overdue">Vencida</span>':`<span class="status ${esc(t.status)}">${({available:'Disponible',assigned:'Asignada',damaged:'Dañada',lo
+
+### function toolForm 1
+OFFSET 970666 LINE 1474
+hoy')}<div class="btnrow"><button class="btn secondary" onclick="enableAlerts()">🔔 Activar notificaciones</button></div>`}
+function toolNewView(){photoData='';editId=null;return toolForm()}
+function toolForm(t){t=t||{};return `<form id="toolForm" onsubmit="saveTool(event)"><div class="card"><div class="field"><label>Nombre de herramienta *</label><input id="toolName" maxlength="100" required placeholder="Ej.: Taladro DeWalt 20V" value="${esc(t.name||'')}"></div><div class="field"><label>Código de barras o QR</label><div class="inputscan"><input id="toolCode" maxlength="90" placeholder="Escanear o dejar vacío (autogenerar)" value="${esc(t.code||'')}"><button type="button" onclick="scanTo('toolCode')" title="Escanear código">▣</button></div><small>Si la herramienta no tiene código, generaremos uno exclusivo.</small></div><div class="two"><div class="field"><label>Marca</label><input id="toolBrand" maxlength="75" placeholder="DeWalt" value="${esc(t.brand||'')}"></div><div class="field"><label>Modelo/serie</label><input id="toolSerial" maxlength="100" placeholder="Modelo o seri
+
+### function startScan 0
+
+### tc-iphone-followup-2\.4\.js 1
+OFFSET 1055316 LINE 2292
+adores autorizados</h3>';
+ return tcIsCompanyPrincipal()?view.replace(anchor,tcCompanySection()+anchor):view;
+};
+
+</script>
+<script src="./tc-iphone-updates-2.2.js"></script>
+<script src="./tc-iphone-followup-2.4.js"></script>
+</body></html>
+
+### tc-iphone-updates-2\.2\.js 1
+OFFSET 1055265 LINE 2291
+);
+ const anchor='<div class="card"><h3>👥 Administradores autorizados</h3>';
+ return tcIsCompanyPrincipal()?view.replace(anchor,tcCompanySection()+anchor):view;
+};
+
+</script>
+<script src="./tc-iphone-updates-2.2.js"></script>
+<script src="./tc-iphone-followup-2.4.js"></script>
+</body></html>
+
+### sw\.js 1
+OFFSET 1017874 LINE 1877
+hen(()=>{render();syncAlarms();syncSmsReminders();tcStart().catch(e=>console.error('Nube:',e));if(location.protocol==='https:'&&'serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})}).catch(e=>{console.error(e);$('content').innerHTML='<p>No se pudo iniciar el almacenamiento local en este navegador.</p>'});
+</script>
+<script>
+/* ToolControl v1.6 - shared inventory: Supabase auth, SQL transactions, realtime. */
+const TC_WID_KEY='tc-supabase-workspace-v1';
+const TC_SUPABASE_URL='https://vekjfymgwcyfjdmoayrf.supabase.co';
+// Clave PUBLICA para la APK; nunca usar service_role ni claves secretas en un celular.
+const TC_SUPABASE_KEY='sb_publishable_bxwmBFb01AwCZw6jNs36fg_Qfpf19pT';
+const tcClone=v=>JSON.parse(JSON.stringify(v));
+const tcEmpty=()=>({tools:[],people:[],history:[],settings:{}});
+const tcEqual=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+let tcClient=null,tcUser=null,tcWorkspace='',tcWorkspaceName='',tcAvailable=[],tcListeners=[],tcRemote=tcEmpty(),tcSaved=tcEmpty(),tcOps=[],tcCloudOn=false,tcReady=false,tcFlushing=false,tcLastError='',t
+
+### @zxing 1
+OFFSET 481470 LINE 84
+(tcZxingLoadPromise) return tcZxingLoadPromise;
+  tcZxingLoadPromise = new Promise(resolve=>{
+    const script=document.createElement('script');
+    script.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+    script.async=true;
+    script.onload=()=>resolve(!!window.ZXing?.BrowserMultiFormatReader);
+    script.onerror=()=>resolve(false);
+    document.head.appendChild(script);
+  });
+  return tcZxingLoadPromise;
+}
+// Called only after we have a playing video and a camera stream.
+function tcStartZxing(video,onDecoded){
+  if(!window.ZXing?.BrowserMultiFormatReader)return false;
+  const reader=new window.ZXing.BrowserMultiFormatReader(undefined,350);
+  scanReader=reader;
+  reader.decodeContinuously(video,(result)=>{
+    if(!result || scanReader!==reader) return;
+    const value=String(result.getText?.()||'').trim();
+    if(value)onDecoded(value);
+  });
+  return true;
+}
+// iOS must request user consent for each SMS via Apple's Messages composer.
+function tcOpenIOSMessage(id){
+  const p=person(id);
+  if(!p || !p.smsConsent || !isPhoneNumber(p.phone))retur
+
+### BarcodeDetector 12
+OFFSET 983553 LINE 1581
+Chrome mediante HTTPS o usa la app Android instalada. También puedes introducir códigos manualmente.','error');
+    return;
+  }
+  try{
+    // Intentar abrir la cámara siempre, aunque la API BarcodeDetector no esté disponible.
+    // Antes se comprobaba BarcodeDetector primero y se omitía por completo el acceso a la cámara.
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const video=$('scanVideo');if(!video||!continuousSession?.active)return closeScan();
+    video.srcObject=scanStream;
+    await video.play();
+    if(typeof BarcodeDetector==='undefined'){
+      scanResult('Preparando lector QR y código de barras compatible con iPhone…','');
+      if(await tcLoadZxing()){
+        if(!continuousSession?.active || !$('scanVideo'))return closeScan();
+        tcStartZxing(video, code=>{
+          if(!continuousSession?.active)return;
+          // Allow a re-read after the cooldown; original per-session duplicate validation still applies.
+          const at=Date.now(),last=continuousCodeTimes.get(code)||0;
+      
+OFFSET 983616 LINE 1582
+uedes introducir códigos manualmente.','error');
+    return;
+  }
+  try{
+    // Intentar abrir la cámara siempre, aunque la API BarcodeDetector no esté disponible.
+    // Antes se comprobaba BarcodeDetector primero y se omitía por completo el acceso a la cámara.
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const video=$('scanVideo');if(!video||!continuousSession?.active)return closeScan();
+    video.srcObject=scanStream;
+    await video.play();
+    if(typeof BarcodeDetector==='undefined'){
+      scanResult('Preparando lector QR y código de barras compatible con iPhone…','');
+      if(await tcLoadZxing()){
+        if(!continuousSession?.active || !$('scanVideo'))return closeScan();
+        tcStartZxing(video, code=>{
+          if(!continuousSession?.active)return;
+          // Allow a re-read after the cooldown; original per-session duplicate validation still applies.
+          const at=Date.now(),last=continuousCodeTimes.get(code)||0;
+          if(at-last<1200)return;
+          continuousCodeTimes.set(c
+OFFSET 983961 LINE 1587
+'environment'}},audio:false});
+    const video=$('scanVideo');if(!video||!continuousSession?.active)return closeScan();
+    video.srcObject=scanStream;
+    await video.play();
+    if(typeof BarcodeDetector==='undefined'){
+      scanResult('Preparando lector QR y código de barras compatible con iPhone…','');
+      if(await tcLoadZxing()){
+        if(!continuousSession?.active || !$('scanVideo'))return closeScan();
+        tcStartZxing(video, code=>{
+          if(!continuousSession?.active)return;
+          // Allow a re-read after the cooldown; original per-session duplicate validation still applies.
+          const at=Date.now(),last=continuousCodeTimes.get(code)||0;
+          if(at-last<1200)return;
+          continuousCodeTimes.set(code,at);
+          receiveContinuousCode(code);
+        });
+        scanResult('Lector iPhone listo: apunta a QR o código de barras.','');
+      }else{
+        scanResult('No se pudo cargar el lector. Revisa tu internet o escribe el código manualmente.','error');
+      }
+      return;
+    }
+    const preferred=['qr_code','code_128','code_39','
+OFFSET 984975 LINE 1607
+ }
+      return;
+    }
+    const preferred=['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','codabar','data_matrix','pdf417'];
+    let formats=preferred;
+    if(typeof BarcodeDetector.getSupportedFormats==='function'){
+      try{const supported=await BarcodeDetector.getSupportedFormats();formats=preferred.filter(f=>supported.includes(f));}catch(e){}
+    }
+    try{scanReader=formats.length?new BarcodeDetector({formats}):new BarcodeDetector()}
+    catch(err){scanReader=new BarcodeDetector()}
+    scanResult('Cámara lista: enfoca un código de barras o QR. La lectura se verificará automáticamente.','');
+    let detecting=false;
+    const scanFrame=async()=>{
+      const v=$('scanVideo');if(!v||!scanReader||!continuousSession?.active)return;
+      if(!detecting&&v.readyState>=2){
+        detecting=true;
+        try{
+          const codes=await scanReader.detect(v);
+          for(const barcode of codes){
+            const code=barcode.rawValue?.trim();if(!code)continue;
+            if(!continuousCodeTimes.has(code)){continuousCodeTimes.set(code,Date.now());re
+
+### function scanner 0
+
+### function go\( 1
+OFFSET 666337 LINE 1457
+|'',personName:p?.name||'',at:now(),note});}
+function navButton(id,icon,label){return `<button class="${page===id?'active':''}" onclick="go('${id}')"><span>${icon}</span>${label}</button>`}
+function go(id){if(continuousSession?.active)stopContinuousSession(false);closeScan();page=id;render();scrollTo({top:0,behavior:'instant'})}
+function aboutView(){return `<div class="about-cover"><img src="data:image/webp;base64,UklGRoqwAQBXRUJQVlA4IH6wAQAQPgWdASrAA4ACPkUejUSioaSipnP6oJAIiWNnNITSbwbC9+g/9/AudeMT9jIZ4V8sb9T07GaH/i5xffk+9RglN6RktbKn+j1x+ieU1zf/BeDf8N4Dfpn+J9gD9bP+L6ymB975/wfYC4xef3/1/QL+t+oD/seN/96/6XqQyjsiaifFft/yu/vvv38Z9z/mf8J+jP7L+4X3rfxf+x/hfUD5T/c/9H/CepN6D+xf63+8/5T/6/5j5e/8//mf6X3bfpv/l/5399/oC/h385/4H9v/zH7c/RT/uevX/Gf9P1C/2f/T/+n/Wfn/9Wf/H/8H+S92X+E/2n7Ef6D5Bf59/mf/3/sfbS9i392///7hP9T/2//z/4Ptq/uR/yPlZ/rX+0/a7/lf//6J/2b/+fsAf/P2w/4B//+n3iT+W/1P/F8Jfzz3afbj/F/+z/e/cd51+E73/75vzW9yvu2+z/zX7d/4z9yvu999fh3+sf4H/r/Nz/N/t39hH5f/Uf89/hP2+/v/7j/VtCc7Cfsf/H1Dveb73/tf8z/pP+d/m/jK7y+lX8Z+7P5y/6X7Av6l/cf9d+cf+H///v2f9zx7f3X/t/8nuBf1f+/f8j/Ef4v9v/mc/7f9z/tP3P9237B/yf/V/vf9d+4f
+
+### function filteredTools 0
+
+### LAST SCRIPTS
+panyPanel"><h3>🏢 Empresas</h3>
+ <p class="hint">Empresa actual: <b>${esc(tcWorkspaceName)}</b>. Puedes crear otra empresa con un correo y contraseña diferentes. Sus herramientas, trabajadores y administradores estarán separados de esta empresa.</p>
+ <button class="btn ${tcCompanyFormOpen?'outline':'primary'} block" onclick="tcCompanyFormOpen=!tcCompanyFormOpen;render()">${tcCompanyFormOpen?'Cerrar formulario':'➕ Agregar otra empresa'}</button>
+ ${tcCompanyFormOpen?`<div style="margin-top:16px">
+ <div class="field"><label>Nombre de la nueva empresa *</label><input id="tcCompanyNewName" maxlength="90" autocomplete="off" placeholder="Ej.: Empresa de mantenimiento"></div>
+ <div class="field"><label>Correo del nuevo administrador principal *</label><input id="tcCompanyOwnerEmail" type="email" autocomplete="off" autocapitalize="none" placeholder="empresa2@ejemplo.com"></div>
+ <div class="field"><label>Contraseña del nuevo administrador (10 caracteres mínimo) *</label><input id="tcCompanyOwnerPassword" type="password" autocomplete="new-password" placeholder="Contraseña segura"></div>
+ <div class="field"><label>Confirmar contraseña *</label><input id="tcCompanyOwnerConfirm" type="password" autocomplete="new-password" placeholder="Repite la contraseña"></div>
+ <p class="hint">Al crear la empresa se registrará un inventario vacío y un administrador principal protegido. No se enviará correo de confirmación: verifica que el correo esté bien escrito. La contraseña se entrega al responsable por un medio seguro. Para abrir la otra empresa, cierra sesión e inicia con su correo y contraseña.</p>
+ <button class="btn primary block" ${tcCompanyBusy?'disabled':''} onclick="tcCreateCompany()">${tcCompanyBusy?'Creando empresa...':'Crear empresa y administrador principal'}</button>
+ </div>`:''}</div>`;
+}
+async function tcCreateCompany(){
+ if(tcCompanyBusy)return;
+ if(!tcIsCompanyPrincipal())return toast('Solo el administrador principal puede agregar otra empresa');
+ const company_name=($('tcCompanyNewName')?.value||'').trim();
+ const email=($('tcCompanyOwnerEmail')?.value||'').trim().toLowerCase();
+ const password=$('tcCompanyOwnerPassword')?.value||'';
+ const confirmPassword=$('tcCompanyOwnerConfirm')?.value||'';
+ if(company_name.length<2||company_name.length>90)return toast('Introduce el nombre de la empresa');
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return toast('Introduce un correo válido');
+ if(password.length<10||password.length>128)return toast('La contraseña debe tener entre 10 y 128 caracteres');
+ if(password!==confirmPassword)return toast('Las contraseñas no coinciden');
+ if(!navigator.onLine)return toast('Se necesita Internet para registrar empresas');
+ if(!confirm('¿Crear la empresa «'+company_name+'» con «'+email+'» como administrador principal? El inventario empezará vacío y estará separado de '+tcWorkspaceName+'.'))return;
+ tcCompanyBusy=true;
+ try{
+  const data=await tcAdminsCall('create_company',{company_name,email,password});
+  if(!data.ok)throw Error(data.error||'No se pudo crear la empresa');
+  tcCompanyFormOpen=false;
+  toast('Empresa «'+company_name+'» creada. Para entrar, cierra sesión y usa '+email);
+  tcLastError='';
+  render();
+ }catch(e){tcLastError=tcStringErr(e);toast(tcLastError)}finally{tcCompanyBusy=false}
+}
+const tcHomeViewBeforeCompanies20=homeView;
+homeView=function(){
+ const top=tcCloudOn?`<div class="card"><strong>🏢 Empresa activa: ${esc(tcWorkspaceName)}</strong><p class="hint">Estás viendo únicamente las herramientas y trabajadores de esta empresa.</p></div>`:'';
+ return top+tcHomeViewBeforeCompanies20();
+};
+const tcCloudViewBeforeCompanies20=tcCloudView;
+tcCloudView=function(){
+ const view=tcCloudViewBeforeCompanies20();
+ const anchor='<div class="card"><h3>👥 Administradores autorizados</h3>';
+ return tcIsCompanyPrincipal()?view.replace(anchor,tcCompanySection()+anchor):view;
+};
+
+</script>
+<script src="./tc-iphone-updates-2.2.js"></script>
+<script src="./tc-iphone-followup-2.4.js"></script>
+</body></html>
