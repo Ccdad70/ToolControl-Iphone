@@ -9,33 +9,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Extraer estructura de inicio, acciones y navegación
+    - name: Extraer HTML y estilos sin imágenes incrustadas
       run: |
         python3 - <<'PY'
         from pathlib import Path
         import re
         s=Path('index.html').read_text(encoding='utf8')
-        pats=[
-          r'function homeView\s*\(',r'function render\s*\(',r'function navButton\s*\(',
-          r'function go\s*\(',r'function toolNewView\s*\(',r'function startBatchRegister',
-          r'function startContinuous',r'function deliveryView',r'function assignView',
-          r'function returnView',r'function tcHomeView',r'function openScan',
-          r'bottomnav',r'id="content"',r'function tc.*View',
-          r'function stats',r'function home',r'\.kpi\b',r'\.stat\b',r'\.home\b',
-          r'\.quick\b',r'function startBatch',r'function tcHideSplash'
-        ]
-        lines=['FILE SIZE: '+str(len(s))+'\n']
-        for pat in pats:
-          match=list(re.finditer(pat,s,re.I))
-          lines.append('\n### '+pat+' COUNT '+str(len(match)))
-          for m in match[:5]:
-            beg=m.start()
-            cap=15000 if pat in (r'function homeView\s*\(',r'function render\s*\(') else 3000
-            lines.append('OFFSET '+str(beg)+' LINE '+str(s.count(chr(10),0,beg)+1)+'\n'+s[max(0,beg-400):beg+cap])
-        Path('audit-home-ui.txt').write_text('\n'.join(lines)[:150000],encoding='utf8')
+        s=re.sub(r'data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+','[IMAGEN_INCRUSTADA]',s)
+        pattern=[r'function homeView\s*\(',r'function render\s*\(',r'function navButton\s*\(',r'function go\s*\(',r'function assignView\s*\(',r'function returnView\s*\(',r'function inventoryView\s*\(',r'function toolForm\s*\(',r'\.brand-attribution\s*\{',r'\.home-actions\s*\{',r'\.quick-actions\s*\{',r'\.stats\s*\{',r'\.stat\s*\{',r'body\s*\{',r'\.bottomnav\s*\{',r'#bottomnav\s*\{']
+        out=[]
+        for pat in pattern:
+          found=list(re.finditer(pat,s,re.I))
+          out.append('\n## '+pat+' (occurrences '+str(len(found))+')')
+          for m in found[:4]:
+            start=m.start()
+            end=start+(18000 if 'homeView' in pat else 4300)
+            out.append('LINE '+str(s.count('\n',0,start)+1)+'\n'+s[max(0,start-250):end])
+        Path('audit-home-clean.txt').write_text('\n'.join(out)[:130000],encoding='utf8')
         PY
         git config user.name 'github-actions[bot]'
         git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git add audit-home-ui.txt
-        git commit -m 'Auditar pantalla inicial iPhone [skip ci]'
+        git add audit-home-clean.txt
+        git commit -m 'Analizar interfaz Inicio iPhone sin imágenes [skip ci]'
         git push
