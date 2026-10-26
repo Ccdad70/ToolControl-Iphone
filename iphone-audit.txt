@@ -1,4 +1,4 @@
-TOTAL SIZE 1055367 LINES 2293
+TOTAL SIZE 1055420 LINES 2294
 
 ### function inventoryView 1
 OFFSET 966385 LINE 1468
@@ -220,6 +220,7 @@ adores autorizados</h3>';
 </script>
 <script src="./tc-iphone-updates-2.2.js"></script>
 <script src="./tc-iphone-followup-2.4.js"></script>
+<script src="./tc-iphone-inventory-v24.js"></script>
 </body></html>
 
 ### tc-iphone-updates-2\.2\.js 1
@@ -232,6 +233,7 @@ OFFSET 1055265 LINE 2291
 </script>
 <script src="./tc-iphone-updates-2.2.js"></script>
 <script src="./tc-iphone-followup-2.4.js"></script>
+<script src="./tc-iphone-inventory-v24.js"></script>
 </body></html>
 
 ### sw\.js 1
@@ -380,8 +382,7 @@ function aboutView(){return `<div class="about-cover"><img src="data:image/webp;
 ### function filteredTools 0
 
 ### LAST SCRIPTS
-panyPanel"><h3>🏢 Empresas</h3>
- <p class="hint">Empresa actual: <b>${esc(tcWorkspaceName)}</b>. Puedes crear otra empresa con un correo y contraseña diferentes. Sus herramientas, trabajadores y administradores estarán separados de esta empresa.</p>
+sa actual: <b>${esc(tcWorkspaceName)}</b>. Puedes crear otra empresa con un correo y contraseña diferentes. Sus herramientas, trabajadores y administradores estarán separados de esta empresa.</p>
  <button class="btn ${tcCompanyFormOpen?'outline':'primary'} block" onclick="tcCompanyFormOpen=!tcCompanyFormOpen;render()">${tcCompanyFormOpen?'Cerrar formulario':'➕ Agregar otra empresa'}</button>
  ${tcCompanyFormOpen?`<div style="margin-top:16px">
  <div class="field"><label>Nombre de la nueva empresa *</label><input id="tcCompanyNewName" maxlength="90" autocomplete="off" placeholder="Ej.: Empresa de mantenimiento"></div>
@@ -430,4 +431,5 @@ tcCloudView=function(){
 </script>
 <script src="./tc-iphone-updates-2.2.js"></script>
 <script src="./tc-iphone-followup-2.4.js"></script>
+<script src="./tc-iphone-inventory-v24.js"></script>
 </body></html>
