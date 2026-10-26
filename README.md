@@ -15,3 +15,9 @@ El enlace de instalación continúa siendo https://ccdad70.github.io/ToolControl
 La cámara incorpora esquinas verdes y una línea animada que orientan el QR/código de barras. Al reconocer un código muestra una confirmación visual verde; el sonido y el proceso existente no se alteran. Disponible al buscar herramientas, registrar, entregar y recibir. El marco es una guía visual y no limita la detección a su interior.
 
 El enlace de instalación sigue siendo https://ccdad70.github.io/ToolControl-Iphone/ . Si no aparece el recuadro, abre el enlace en Safari con Internet y luego reinicia la aplicación instalada desde la pantalla de inicio para actualizar la caché.
+
+## Inicio iPhone V2.4 igual a Android — 26 de octubre de 2026
+
+Actualización visual basada en la pantalla Android suministrada: crédito de desarrollo, indicadores Activas/Disponibles/Prestadas, tarjetas azul oscuro en dos columnas y accesos a Registro múltiple, Registrar herramienta, Entregar, Recibir e Inventario. El registro múltiple abre el formulario existente y utiliza el botón para escanear herramientas iguales. Mantiene navegación inferior, datos de Supabase, escáner animado QR, inventario agrupado y todas las funciones previas. No modifica Android.
+
+Enlace sin cambios: https://ccdad70.github.io/ToolControl-Iphone/ . Si la app instalada en Inicio conserva la vista anterior, abre el enlace en Safari y reinicia la aplicación de la pantalla de inicio para actualizar el caché.
