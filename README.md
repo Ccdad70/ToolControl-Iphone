@@ -9,3 +9,9 @@ El flujo `.github/workflows/publicar-iphone.yml` publica esta versión mediante 
 Se incorporaron grupos automáticos por tipo/nombre (incluidos Impacto, Hole Hawg y grupos nuevos), recuento por categoría, búsqueda por nombre, marca, modelo, número de serie, código QR y trabajador, y escaneo de códigos QR/barras para encontrar la herramienta. El lector y las funciones de entrega, devolución y registro se mantienen; Android no cambia.
 
 El enlace de instalación continúa siendo https://ccdad70.github.io/ToolControl-Iphone/ . Si la versión anterior queda guardada en la pantalla de inicio, abre el enlace en Safari con conexión y vuelve a iniciar la aplicación para actualizar el caché.
+
+## Recuadro de escaneo iPhone V2.4 (26 octubre 2026)
+
+La cámara incorpora esquinas verdes y una línea animada que orientan el QR/código de barras. Al reconocer un código muestra una confirmación visual verde; el sonido y el proceso existente no se alteran. Disponible al buscar herramientas, registrar, entregar y recibir. El marco es una guía visual y no limita la detección a su interior.
+
+El enlace de instalación sigue siendo https://ccdad70.github.io/ToolControl-Iphone/ . Si no aparece el recuadro, abre el enlace en Safari con Internet y luego reinicia la aplicación instalada desde la pantalla de inicio para actualizar la caché.
