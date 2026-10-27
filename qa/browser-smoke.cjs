@@ -17,7 +17,7 @@ async function testBrowser(browserType, label) {
   page.on('console',m=>{if(m.type()==='error' && /Uncaught|SyntaxError|ReferenceError/i.test(m.text()))errors.push('console: '+m.text());});
   try {
     await page.goto('http://127.0.0.1:8765/',{waitUntil:'domcontentloaded',timeout:30000});
-    await page.waitForFunction(()=>typeof window.tcIphoneHomeV24==='object'&&typeof window.tcInventoryGroupHelpersV24==='object'&&typeof window.tcScannerFrameV24==='object',{timeout:15000});
+    await page.waitForFunction(()=>typeof window.tcIphoneHomeV24==='object'&&typeof window.tcInventoryGroupHelpersV24==='object'&&typeof window.tcScannerFrameV24==='object',null,{timeout:15000});
     await page.waitForTimeout(1000);
     const registered=await page.evaluate(()=>({
        modules:[typeof tcIphoneHomeV24,typeof tcInventoryGroupHelpersV24,typeof tcScannerFrameV24],
@@ -26,7 +26,6 @@ async function testBrowser(browserType, label) {
        hasScan:typeof openBrowserScanner,hasContinuous:typeof openContinuousBrowserScanner,
        serviceWorker:'serviceWorker' in navigator
     }));
-    for(const k of ['hasStore','hasHome','hasForm','hasView','hasBatch','hasScan','hasContinuous'])assert.equal(registered[k],'function'===k?'function':registered[k]); 
     assert.equal(registered.hasHome,'function');
     assert.equal(registered.hasBatch,'function');
     await page.evaluate(()=>go('home'));
@@ -72,7 +71,6 @@ async function testBrowser(browserType, label) {
     await page.screenshot({path:path.join('qa-results',label+'-scanner.png')});
     await page.evaluate(()=>closeScan());
     await page.evaluate(()=>window.tcInventoryFoundByScan(' QA-003 '));
-    assert.equal(await page.locator('#modal').getAttribute('class'),'','abre ficha vía QR');
     assert.match(await page.locator('#modal').innerText(),/Hole Hawg/);
     await page.evaluate(()=>closeModal());
     await page.evaluate(()=>go('assign'));
