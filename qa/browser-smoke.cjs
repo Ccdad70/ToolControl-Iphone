@@ -29,7 +29,20 @@ async function testBrowser(browserType, label) {
     assert.equal(registered.hasHome,'function');
     assert.equal(registered.hasBatch,'function');
     await page.evaluate(()=>go('home'));
-    await page.locator('.tc-home-actions-v24 button').first().waitFor({timeout:9000});
+    await page.locator('.tc-home-actions-v24 button').first().waitFor({timeout:9000}).catch(async e=>{
+      const diagnostics=await page.evaluate(()=>({
+        ready:document.readyState,
+        main:document.querySelector('#content')?.outerHTML?.slice(0,1800)||null,
+        body:document.body.innerText?.slice(0,1600)||null,
+        pageVar:typeof page!=='undefined'?page:null,
+        homeViewSample:typeof homeView==='function'?homeView().slice(0,2200):null,
+        hasHomeScript:typeof tcIphoneHomeV24,
+        login:document.querySelector('#loginModal')?.outerHTML?.slice(0,300)||null
+      }));
+      console.error('DIAG '+label+' '+JSON.stringify({diagnostics,errors}));
+      await page.screenshot({path:path.join('qa-results',label+'-failure.png'),fullPage:true});
+      throw e;
+    });
     assert.equal(await page.locator('.tc-home-actions-v24 button').count(),5,'cinco tarjetas');
     const cards=await page.locator('.tc-home-actions-v24 button b').allTextContents();
     assert.deepEqual(cards.map(x=>x.trim()),['Registro múltiple','Registrar herramienta','Entregar','Recibir','Inventario']);
