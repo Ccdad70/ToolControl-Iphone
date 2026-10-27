@@ -19,12 +19,28 @@ async function testBrowser(browserType, label) {
     await page.goto('http://127.0.0.1:8765/',{waitUntil:'domcontentloaded',timeout:30000});
     await page.waitForFunction(()=>typeof window.tcIphoneHomeV24==='object'&&typeof window.tcInventoryGroupHelpersV24==='object'&&typeof window.tcScannerFrameV24==='object',null,{timeout:15000});
     await page.waitForTimeout(1000);
-    // Elegir modo local de pruebas; no usar credenciales ni modificar Supabase.
-    const localChoice=page.getByText('Solo este celular',{exact:true});
-    if(await localChoice.count()) {
-      await localChoice.first().click({timeout:4000});
-      await page.waitForTimeout(650);
-    }
+    // Comprobar la pantalla de autenticación sin credenciales ni escrituras.
+    assert.equal(await page.locator('#tcEmail').count(),1,'acceso requiere autenticación');
+    // Probar las vistas en un arnés UI aislado: NO sustituye ni evade
+    // la autenticación real del sitio publicado.
+    await page.evaluate(()=>{
+      const views={
+        home:()=>homeView(),toolnew:()=>toolNewView(),inventory:()=>inventoryView(),
+        assign:()=>assignView(),return:()=>returnView(),people:()=>peopleView(),
+        alerts:()=>alertView()
+      };
+      window.render=function(){
+        const main=document.getElementById('content');
+        if(main)main.innerHTML=(views[page]||views.home)();
+        const nav=document.getElementById('bottomnav');
+        if(nav)nav.innerHTML=navButton('home','🏠','Inicio')+
+          navButton('inventory','🧰','Inventario')+
+          navButton('people','👷','Personal')+
+          navButton('alerts','🔔','Alertas');
+      };
+      window.go=function(id){page=id;window.render();};
+      window.go('home');
+    });
     const registered=await page.evaluate(()=>({
        modules:[typeof tcIphoneHomeV24,typeof tcInventoryGroupHelpersV24,typeof tcScannerFrameV24],
        hasStore:typeof state,hasHome:typeof homeView,hasForm:typeof toolForm,hasView:typeof inventoryView,
@@ -34,7 +50,7 @@ async function testBrowser(browserType, label) {
     }));
     assert.equal(registered.hasHome,'function');
     assert.equal(registered.hasBatch,'function');
-    await page.evaluate(()=>go('home'));
+    await page.evaluate(()=>window.go('home'));
     await page.locator('.tc-home-actions-v24 button').first().waitFor({timeout:9000}).catch(async e=>{
       const diagnostics=await page.evaluate(()=>({
         ready:document.readyState,
