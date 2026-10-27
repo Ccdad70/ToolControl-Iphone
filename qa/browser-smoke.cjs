@@ -19,6 +19,12 @@ async function testBrowser(browserType, label) {
     await page.goto('http://127.0.0.1:8765/',{waitUntil:'domcontentloaded',timeout:30000});
     await page.waitForFunction(()=>typeof window.tcIphoneHomeV24==='object'&&typeof window.tcInventoryGroupHelpersV24==='object'&&typeof window.tcScannerFrameV24==='object',null,{timeout:15000});
     await page.waitForTimeout(1000);
+    // Elegir modo local de pruebas; no usar credenciales ni modificar Supabase.
+    const localChoice=page.getByText('Solo este celular',{exact:true});
+    if(await localChoice.count()) {
+      await localChoice.first().click({timeout:4000});
+      await page.waitForTimeout(650);
+    }
     const registered=await page.evaluate(()=>({
        modules:[typeof tcIphoneHomeV24,typeof tcInventoryGroupHelpersV24,typeof tcScannerFrameV24],
        hasStore:typeof state,hasHome:typeof homeView,hasForm:typeof toolForm,hasView:typeof inventoryView,
@@ -35,7 +41,7 @@ async function testBrowser(browserType, label) {
         main:document.querySelector('#content')?.outerHTML?.slice(0,1800)||null,
         body:document.body.innerText?.slice(0,1600)||null,
         pageVar:typeof page!=='undefined'?page:null,
-        homeViewSample:typeof homeView==='function'?homeView().slice(0,2200):null,
+        homeViewSample:typeof homeView==='function'?homeView().slice(-850):null,
         hasHomeScript:typeof tcIphoneHomeV24,
         login:document.querySelector('#loginModal')?.outerHTML?.slice(0,300)||null
       }));
