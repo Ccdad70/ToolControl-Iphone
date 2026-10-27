@@ -1,0 +1,65 @@
+name: Auditoría profunda ToolControl iPhone V2.4 (temporal)
+on:
+  push:
+    branches: [qa/iphone-v24-regression-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar JavaScript, HTML y service worker
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 .github/scripts/prepare_iphone.py
+          node --check sw.js
+          for f in ./tc-iphone-*.js ./tests/*.cjs ./qa/*.cjs; do
+            node --check "$f"
+          done
+          for f in ./tests/*.cjs; do
+            node "$f"
+          done
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path("index.html").read_text(encoding="utf8")
+          blocks=re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script\s*>',s,re.I)
+          Path("qa-results").mkdir(exist_ok=True)
+          for i,block in enumerate(blocks):
+              Path("qa-results/inline-%d.js"%i).write_text(block,encoding="utf8")
+          assert blocks, "Faltan scripts embebidos del sitio"
+          import subprocess
+          for i in range(len(blocks)):
+              subprocess.run(["node","--check","qa-results/inline-%d.js"%i],check=True)
+          scripts=re.findall(r'<script[^>]+src="([^"]+)"',s,re.I)
+          for path in ('./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js'):
+              assert scripts.count(path)==1,(path,scripts)
+          assert 'toolcontrol-iphone-v24-home-android-style-v3' in Path('sw.js').read_text()
+          print('OK: todos los scripts originales y nuevos validados')
+          PY
+
+      - name: Instalar Playwright para navegador iPhone/WebKit
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium webkit
+
+      - name: Pruebas reales en motores Chromium y Safari WebKit
+        shell: bash
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > qa-results/http.log 2>&1 &
+          server=$!
+          trap "kill $server || true" EXIT
+          sleep 3
+          node qa/browser-smoke.cjs
+
+      - name: Exportar reporte y capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToolControl-iPhone-V24-QA-WebKit-Chromium
+          path: qa-results/
+          if-no-files-found: warn
