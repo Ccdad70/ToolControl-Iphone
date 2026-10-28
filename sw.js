@@ -1,6 +1,6 @@
 // ToolControl iPhone: cache de la aplicación, no sesiones ni respuestas privadas de Supabase.
-const CACHE='toolcontrol-iphone-v24-home-android-style-v3';
-const SHELL=['./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js'];
+const CACHE='toolcontrol-iphone-v24-nuevo-logo-comercial-v4';
+const SHELL=['./toolcontrol-app-icon.png','./toolcontrol-logo.png','./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js'];
 self.addEventListener('install',event=>event.waitUntil(
   caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())
 ));
