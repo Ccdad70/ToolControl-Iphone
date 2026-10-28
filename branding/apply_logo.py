@@ -41,11 +41,13 @@ html,nbackground=re.subn(
 # Los iconos estáticos previos se sustituyen sin tocar otros recursos.
 html=html.replace('href="./icon.svg"','href="./toolcontrol-app-icon.png"')
 html=html.replace('href="icon.svg"','href="toolcontrol-app-icon.png"')
+html=re.sub(r'alt="[^"]*(?:UNEXPO|Gaylor)[^"]*"','alt="ToolControl"',html,flags=re.I)
 # Nueva regla CSS al final de <head>, para no romper las otras hojas de estilo.
 style='<style id="tc-branding-commercial-v24">\n' \
     '.brand-attribution{background:linear-gradient(145deg,#07172c,#08294e)!important;}\n' \
     '.brand-attribution .identity-logo{width:100%;max-height:none;object-fit:contain;}\n' \
-    '.brand-attribution .credit{display:none!important;}\n' \
+    '.brand-attribution .credit,.splash-credit,.about-credit{display:none!important;}\n' \
+    '.brand-logo{background:#09244a url("./toolcontrol-app-icon.png") center/cover no-repeat!important;color:transparent!important;}\n' \
     '#tcSplash{background:linear-gradient(#05192ba6,#05192bd7),url("./toolcontrol-logo.png") center/contain no-repeat,#061a31!important;}\n' \
     '.top{background:linear-gradient(130deg,#07182d,#0b3154)!important;}\n' \
     '.about-cover{background:linear-gradient(#06182aba,#051b35ef),url("./toolcontrol-logo.png") center/contain no-repeat!important;}\n' \
