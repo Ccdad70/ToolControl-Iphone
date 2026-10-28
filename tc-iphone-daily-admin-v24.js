@@ -54,7 +54,7 @@ function settingsCard(){
   if(!reconcile())return '';
   const p=isPrimary(),c=cache.settings;
   let html='<div class="card" id="tcDailyAdminReminderCard"><h3>⏰ Recordatorio diario a administradores</h3>'+
-    '<p class="hint">Todos los días a las <b>6:30 a. m.</b> (hora del este, ajustada al horario de verano). Se muestra dentro de ToolControl.</p>';
+    '<p class="hint">Todos los días a las <b>6:30 a. m.</b> (hora del este, ajustada al horario de verano). Se muestra dentro de ToolControl; el Android autorizado también lo envía por SMS a los administradores.</p>';
   if(cache.error)html+='<p class="hint" style="color:#a32929">Error de conexión: '+esc(cache.error)+'</p>';
   if(!c)return html+'<button type="button" class="btn outline" onclick="tcDailyAdminReloadV24()">↻ Consultar configuración</button></div>';
   if(p){
@@ -66,7 +66,7 @@ function settingsCard(){
     html+='<p style="white-space:pre-wrap">'+esc(c.message||'')+'</p>'+
       '<p class="hint">Solo el administrador principal puede modificar o desactivar este mensaje.</p>';
   }
-  html+='<p class="hint">Estado: <b>'+(c.enabled?'Activado':'Desactivado')+'</b>. La entrega por SMS no está incluida en este aviso interno.</p></div>';
+  html+='<p class="hint">Estado: <b>'+(c.enabled?'Activado':'Desactivado')+'</b>. SMS matutinos: únicamente desde el Android encargado, con permiso de envío y conexión. La entrega depende de Android y la operadora.</p></div>';
   return html;
 }
 window.tcDailyAdminSaveV24=async function(){
