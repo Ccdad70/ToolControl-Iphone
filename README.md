@@ -21,3 +21,7 @@ El enlace de instalación sigue siendo https://ccdad70.github.io/ToolControl-Iph
 Actualización visual basada en la pantalla Android suministrada: crédito de desarrollo, indicadores Activas/Disponibles/Prestadas, tarjetas azul oscuro en dos columnas y accesos a Registro múltiple, Registrar herramienta, Entregar, Recibir e Inventario. El registro múltiple abre el formulario existente y utiliza el botón para escanear herramientas iguales. Mantiene navegación inferior, datos de Supabase, escáner animado QR, inventario agrupado y todas las funciones previas. No modifica Android.
 
 Enlace sin cambios: https://ccdad70.github.io/ToolControl-Iphone/ . Si la app instalada en Inicio conserva la vista anterior, abre el enlace en Safari y reinicia la aplicación de la pantalla de inicio para actualizar el caché.
+
+## ToolControl V2.4 — nueva imagen de marca
+
+El logo azul de ToolControl y los iconos de la aplicación se actualizaron. El enlace de instalación no cambia.
