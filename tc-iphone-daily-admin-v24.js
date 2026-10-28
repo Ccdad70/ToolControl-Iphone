@@ -13,7 +13,7 @@ function isPrimary(){
   catch(e){return false;}
 }
 function todayInEastern(){
-  try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+  try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const p=Object.fromEntries(parts.map(x=>[x.type,x.value]));return p.year+'-'+p.month+'-'+p.day;}
   catch(e){return new Date().toISOString().slice(0,10);}
 }
 function reconcile(){
