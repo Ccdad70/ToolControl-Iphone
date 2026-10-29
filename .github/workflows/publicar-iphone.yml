@@ -29,12 +29,16 @@ jobs:
           node tests/test-inventory-iphone-v24.cjs
           node tests/test-iphone-scanner-frame-v24.cjs
           node --check tc-iphone-home-android-v24.js
+          node --check tc-iphone-daily-sms-status-v241.js
+          node tests/test-iphone-daily-sms-v241.cjs
           node --check tc-iphone-daily-admin-v24.js
           grep -q 'tc-iphone-daily-admin-v24.js' index.html
           grep -q 'tc-iphone-daily-admin-v24.js' sw.js
           node tests/test-iphone-home-android-v24.cjs
           grep -q 'tc-iphone-home-android-v24.js' index.html
           grep -q 'tc-iphone-home-android-v24.js' sw.js
+          grep -q 'tc-iphone-daily-sms-status-v241.js' index.html
+          grep -q 'tc-iphone-daily-sms-status-v241.js' sw.js
           grep -q 'tc-iphone-scanner-frame-v24.js' index.html
           grep -q 'tc-iphone-scanner-frame-v24.js' sw.js
           grep -q 'tc-iphone-inventory-v24.js' index.html
