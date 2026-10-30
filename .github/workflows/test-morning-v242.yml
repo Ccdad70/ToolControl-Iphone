@@ -1,0 +1,17 @@
+name: Validar recordatorios matutinos iPhone 2.4.2
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar JavaScript y recordatorios matutinos
+        run: |
+          node --check tc-iphone-daily-admin-v24.js
+          node tests/test-iphone-morning-schedule-v242.cjs
+          node tests/test-iphone-daily-sms-v241.cjs
