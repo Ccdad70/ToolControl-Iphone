@@ -1,5 +1,5 @@
 /* ToolControl V2.4.2 — horario editable de recordatorios matutinos.
- * Autoridad y validación real: Supabase RLS/RPC; solo principal edita.
+ * Autoridad y validación real: Supabase RLS/RPC; principal o encargado SMS autorizado pueden editar.
  * Los SMS salen exclusivamente del Android autorizado. */
 (function(){
 'use strict';
@@ -13,6 +13,10 @@ function scope(){
 function isPrimary(){
   try{return !!tcIsCompanyPrincipal()&&String(tcUser?.email||tcUser?.contact_email||'').toLowerCase()==='toolcontrolgaylor@gmail.com';}
   catch(e){return false;}
+}
+function canEditMorning(){
+  try{return isPrimary()||!!(tcSmsOwner22?.loaded&&tcSmsOwner22.isMine);}
+  catch(e){return isPrimary();}
 }
 function validTime(s){return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s||''));}
 function timeText(s){
@@ -68,7 +72,7 @@ function homeCard(){
 }
 function settingsCard(){
   if(!reconcile())return '';
-  const p=isPrimary(),c=cache.settings;
+  const p=canEditMorning(),c=cache.settings;
   let html='<div class="card" id="tcDailyAdminReminderCard"><h3>🌅 Recordatorios matutinos</h3>'+
     '<p class="hint">Configura el horario y los días igual que en los SMS de fin de jornada. Hora del este (America/New_York). Los SMS se envían solo desde el Android autorizado.</p>';
   if(cache.error)html+='<p class="hint" style="color:#a32929">Error de conexión: '+esc(cache.error)+'</p>';
@@ -91,13 +95,13 @@ function settingsCard(){
     html+='<p><b>Horario:</b> '+esc(timeText(time))+'</p>'+
       '<p><b>Días:</b> '+esc(days.map(d=>DAY_NAMES[d-1]).join(', '))+'</p>'+
       '<p style="white-space:pre-wrap">'+esc(c.message||'')+'</p>'+
-      '<p class="hint">Solo el administrador principal puede modificar estos ajustes.</p>';
+      '<p class="hint">Solo el administrador principal o el encargado SMS autorizado puede modificar estos ajustes.</p>';
   }
   html+='<p class="hint">Estado: <b>'+(c.enabled?'Activado':'Desactivado')+'</b>. El envío depende de la conexión, permiso SMS, SIM y ejecución de Android; no se garantiza la entrega exacta.</p></div>';
   return html;
 }
 window.tcDailyAdminSaveV24=async function(){
-  if(!isPrimary()||!reconcile()||cache.saving)return toast('Solo la cuenta principal puede editar el recordatorio.');
+  if(!canEditMorning()||!reconcile()||cache.saving)return toast('Solo el administrador principal o el autorizado para SMS puede editar este recordatorio.');
   const message=document.getElementById('tcDailyAdminTextV24')?.value.trim()||'';
   const enabled=!!document.getElementById('tcDailyAdminEnabledV24')?.checked;
   const send_time=document.getElementById('tcDailyAdminTimeV24')?.value||'';
