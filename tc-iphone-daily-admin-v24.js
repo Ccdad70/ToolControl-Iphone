@@ -79,7 +79,7 @@ window.tcDailyAdminSaveV24=async function(){
   const message=document.getElementById('tcDailyAdminTextV24')?.value.trim()||'';
   const enabled=!!document.getElementById('tcDailyAdminEnabledV24')?.checked;
   const sendTime=String(document.getElementById('tcDailyAdminTimeV24')?.value||'');
-  if(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(sendTime))return toast('Selecciona una hora válida.');
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(sendTime))return toast('Selecciona una hora válida.');
   if(message.length<15||message.length>500)return toast('El mensaje debe contener entre 15 y 500 caracteres.');
   if(!navigator.onLine)return toast('Necesitas conexión para guardar el mensaje.');
   cache.saving=true;
