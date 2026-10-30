@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('node:fs'),assert=require('node:assert/strict'),vm=require('node:vm');
+const js=fs.readFileSync('tc-iphone-daily-admin-v24.js','utf8');
+const sw=fs.readFileSync('sw.js','utf8');
+new vm.Script(js);
+assert(js.includes('type="time"'));
+assert(js.includes('tcDailyAdminDaysV24'));
+assert(js.includes('days_of_week'));
+assert(js.includes('send_time'));
+assert(js.includes('tcIsCompanyPrincipal()'));
+assert(js.includes('toolcontrolgaylor@gmail.com'));
+assert(!js.includes('sendTextMessage('),'La PWA no puede enviar SMS');
+assert(sw.includes('tc-iphone-daily-admin-v24.js'));
+console.log('OK iPhone PWA: recordatorios matutinos configurables solo por principal');

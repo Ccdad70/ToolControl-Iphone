@@ -1,5 +1,5 @@
 // ToolControl iPhone: cache de la aplicación, no sesiones ni respuestas privadas de Supabase.
-const CACHE='toolcontrol-iphone-v241-sms-diagnostico-20261029';
+const CACHE='toolcontrol-iphone-v242-morning-reminder-20261030';
 const SHELL=['./toolcontrol-app-icon.png','./toolcontrol-logo.png','./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js','./tc-iphone-daily-admin-v24.js','./tc-iphone-daily-sms-status-v241.js'];
 self.addEventListener('install',event=>event.waitUntil(
   caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())
