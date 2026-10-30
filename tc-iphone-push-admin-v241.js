@@ -35,9 +35,9 @@ function panel(){
   '<label class="field"><input id="tcPushOverdueV241" type="checkbox" '+v('notify_overdue')+'> Devoluciones vencidas</label>'+
   '<label class="field"><input id="tcPushLostV241" type="checkbox" '+v('notify_lost')+'> Herramientas extraviadas (preparado para ampliar eventos)</label>'+
   '<div class="field"><label>Frecuencia mínima (minutos)</label>'+
-  '<input id="tcPushIntervalV241" type="number" min="15" max="1440" step="15" value="'+Number(s.reminder_interval_minutes||60)+'"></div>'+
+  '<input id="tcPushIntervalV241" type="number" min="30" max="1440" step="15" value="'+Number(s.reminder_interval_minutes||60)+'"></div>'+
   '<div class="field"><label>Texto de notificación</label>'+
-  '<textarea id="tcPushTextV241" maxlength="500" rows="4" style="width:100%">'+esc(s.message_template||'')+'</textarea>'+
+  '<textarea id="tcPushTextV241" maxlength="250" rows="4" style="width:100%">'+esc(s.message_template||'')+'</textarea>'+
   '<small>Variables: {trabajador}, {cantidad}, {herramientas}.</small></div>'+
   '<div class="two"><div class="field"><label>Silencio desde (opcional)</label><input id="tcPushQuietStartV241" type="time" value="'+esc(String(s.quiet_start||'').slice(0,5))+'"></div>'+
   '<div class="field"><label>Hasta (opcional)</label><input id="tcPushQuietEndV241" type="time" value="'+esc(String(s.quiet_end||'').slice(0,5))+'"></div></div>'+
@@ -58,8 +58,8 @@ window.tcPushSaveV241=async function(){
  const get=id=>document.getElementById(id), enabled=id=>!!get(id)?.checked;
  const interval=Number(get('tcPushIntervalV241')?.value);
  const template=String(get('tcPushTextV241')?.value||'').trim();
- if(!Number.isInteger(interval)||interval<15||interval>1440)return toast('Frecuencia entre 15 y 1440 minutos.');
- if(template.length<15||template.length>500)return toast('El texto requiere 15 a 500 caracteres.');
+ if(!Number.isInteger(interval)||interval<30||interval>1440)return toast('Frecuencia entre 30 y 1440 minutos.');
+ if(template.length<15||template.length>250)return toast('El texto requiere 15 a 250 caracteres.');
  const quiet_start=get('tcPushQuietStartV241')?.value||null, quiet_end=get('tcPushQuietEndV241')?.value||null;
  if(!!quiet_start!==!!quiet_end)return toast('Configura ambas horas de silencio o deja ambas vacías.');
  memo.saving=true;
