@@ -20,7 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          zip -qr dist/ToolControl_iPhone_V2.5_PWA_Completa.zip index.html manifest.webmanifest sw.js ./*.js ./*.svg ./*.png
+          zip -qr dist/ToolControl_iPhone_V2.5_PWA_Completa.zip index.html manifest.webmanifest ./*.js ./*.svg ./*.png
           unzip -t dist/ToolControl_iPhone_V2.5_PWA_Completa.zip | tail -n 2
       - uses: actions/upload-artifact@v4
         with:
