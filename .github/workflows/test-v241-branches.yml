@@ -1,0 +1,23 @@
+name: Validar ToolControl iPhone V2.4.1 en PR
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Revisar JavaScript
+        run: |
+          set -euo pipefail
+          for script in tc-iphone-*.js sw.js; do node --check "$script"; done
+      - name: Ejecutar regresiones iPhone
+        run: |
+          set -euo pipefail
+          for test in tests/*.cjs; do node "$test"; done
+      - name: Verificar que la configuración PUSH no sea pública
+        run: |
+          set -euo pipefail
+          grep -q "tc-iphone-push-admin-v241.js" index.html
+          grep -q "tcIsCompanyPrincipal" tc-iphone-push-admin-v241.js
