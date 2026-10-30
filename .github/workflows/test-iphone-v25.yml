@@ -1,0 +1,29 @@
+name: ToolControl iPhone V2.5 - Pruebas de candidata
+on:
+  push:
+    branches: [toolcontrol-v2.5-candidate]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pruebas JavaScript e integridad
+        run: |
+          set -euo pipefail
+          for f in tests/*.cjs; do node "$f"; done
+          for f in ./*.js; do node --check "$f"; done
+          node -e "let fs=require('fs'),vm=require('vm'),s=fs.readFileSync('index.html','utf8');for(let match of s.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)){if(match[1].trim())new vm.Script(match[1]);}"
+      - name: Exportar aplicacion iPhone V2.5 (PWA, sin PUSH)
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip -qr dist/ToolControl_iPhone_V2.5_PWA_Completa.zip index.html manifest.webmanifest sw.js ./*.js ./*.svg ./*.png
+          unzip -t dist/ToolControl_iPhone_V2.5_PWA_Completa.zip | tail -n 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToolControl-iPhone-V25-Candidata
+          path: dist/ToolControl_iPhone_V2.5_PWA_Completa.zip
+          if-no-files-found: error
