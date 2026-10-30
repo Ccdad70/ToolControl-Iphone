@@ -31,6 +31,7 @@ async function refresh(force){
 }
 function statusLabel(status){
  switch(status){
+   case 'delivered':return '🟢 Entregado al número (acuse de operadora; no significa leído)';
    case 'requested':return '✅ Android aceptó la solicitud de SMS (entrega al destinatario no confirmada)';
    case 'reserved':return '🟠 Envío reservado; todavía sin confirmación de Android';
    case 'failed':return '❌ Android informó un fallo de envío';
@@ -40,7 +41,7 @@ function statusLabel(status){
 function panel(){
  if(!resetIfChanged())return '';
  const s=record.data;
- let html='<div class="card" id="tcIphoneDailySmsStatusV241"><h3>📲 SMS diario — 6:30 a. m.</h3>'+
+ let html='<div class="card" id="tcIphoneDailySmsStatusV241"><h3>📲 SMS matutino — horario configurable</h3>'+
    '<p class="hint">Diagnóstico del recordatorio para administradores, separado de los avisos de devolución de herramientas.</p>'+
    '<p class="hint"><b>El envío automático sale solo del Android encargado de SMS.</b> iPhone consulta el estado, pero no puede enviar SMS automáticamente con la aplicación cerrada.</p>';
  if(record.error)html+='<p class="hint" style="color:#9e2424">No se pudo consultar el estado: '+esc(record.error)+'</p>';
