@@ -92,11 +92,7 @@ tcCloudView=function(){const content=oldCloud(),scope=scope24();if(!scope)return
  if(scope!==follow24.scope){follow24={scope,rows:[],loaded:false,busy:false,last:0,expanded:false,error:''};setTimeout(()=>void reload24(true),0);}
  return card24()+content;
 };
-const oldHome=homeView;
-homeView=function(){const content=oldHome(),scope=scope24();if(!scope)return content;
- if(scope!==follow24.scope){follow24={scope,rows:[],loaded:false,busy:false,last:0,expanded:false,error:''};setTimeout(()=>void reload24(true),0);}
- return '<div class="card"><h3>📋 Seguimiento V2.4</h3><p class="hint">'+(follow24.loaded?follow24.rows.length+' herramientas prestadas · '+follow24.rows.filter(r=>due24(r.due_on)>0).length+' vencidas':'Consulta el estado de las devoluciones')+'</p><button class="btn outline" onclick="go(\'cloud\')">Ver seguimiento</button></div>'+content;
-};
+// Seguimiento permanece completo en Nube y se abre desde el sexto botón de Inicio.
 setInterval(()=>{if(!document.hidden&&scope24())void reload24();},20000);
 window.addEventListener('focus',()=>{if(scope24())void reload24(true);});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&scope24())void reload24(true);});
