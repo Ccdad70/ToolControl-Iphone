@@ -21,7 +21,7 @@ const ctx={
  tcCloudOn:true,tcUser:{uid:'user1'},tcWorkspace:'company1',tcDenied:false,page:'home',tcIsCompanyPrincipal:()=>ctx.tcUser.uid==='user1',
  navigator:{onLine:true},tcClient:{rpc:async(name,args)=>{requested++;if(name==='tc_sms_current')return {error:null,data:[{owner_uid:'user2'}]};assert.equal(name,'tc_daily_admin_sms_status');assert.equal(args.p_workspace,'company1');return {error:null,data:{day:'2026-10-29',self_status:null,self_queued:true,self_opted:true,is_primary:true,recipient_count:4,requested:0,failed:0,reserved:0}}}},
  window:{addEventListener(){}},document:{addEventListener(name,fn){listeners[name]=fn},hidden:false},
- setInterval(){},setTimeout(){},toast(){},esc:x=>String(x),render(){},homeView(){return '<article>Vista anterior</article>'},homeView(){return '<article>Nube</article>'}
+ setInterval(){},setTimeout(){},toast(){},esc:x=>String(x),render(){},homeView(){return '<article>Vista anterior</article>'},tcCloudView(){return '<article>Nube</article>'}
 };
 vm.createContext(ctx);vm.runInContext(script,ctx);
 (async()=>{
