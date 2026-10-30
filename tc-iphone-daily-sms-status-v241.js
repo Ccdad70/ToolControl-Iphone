@@ -4,14 +4,14 @@
  */
 (function(){
 'use strict';
-let record={scope:'',data:null,busy:false,last:0,error:''};
+let record={scope:'',data:null,busy:false,last:0,error:'',ownerUid:null};
 function key(){
   try{return tcCloudOn&&tcWorkspace&&tcUser?.uid&&!tcDenied ? tcUser.uid+'|'+tcWorkspace : '';}
   catch(e){return '';}
 }
 function resetIfChanged(){
  const k=key();
- if(k!==record.scope)record={scope:k,data:null,busy:false,last:0,error:''};
+ if(k!==record.scope)record={scope:k,data:null,busy:false,last:0,error:'',ownerUid:null};
  return k;
 }
 async function refresh(force){
@@ -19,6 +19,12 @@ async function refresh(force){
  if(!k||record.busy||!navigator.onLine||(!force&&Date.now()-record.last<45000))return;
  record.busy=true;record.last=Date.now();
  try{
+   const owner=await tcClient.rpc('tc_sms_current',{p_workspace:tcWorkspace,p_device:'00000000-0000-4000-8000-000000000000'});
+   if(owner.error)throw owner.error;
+   if(k!==key())return;
+   const currentOwner=Array.isArray(owner.data)?owner.data[0]:null;
+   record.ownerUid=currentOwner?.owner_uid||null;
+   if(!(tcIsCompanyPrincipal()||record.ownerUid===tcUser?.uid)){record.data=null;record.error='';return;}
    const {data,error}=await tcClient.rpc('tc_daily_admin_sms_status',{p_workspace:tcWorkspace});
    if(error)throw error;
    if(k!==key())return;
@@ -26,7 +32,7 @@ async function refresh(force){
  }catch(e){if(k===key())record.error=String(e?.message||e).slice(0,130);}
  finally{
    record.busy=false;
-   if(k===key()&&page==='cloud')render();
+   if(k===key()&&page==='home')render();
  }
 }
 function statusLabel(status){
@@ -38,9 +44,9 @@ function statusLabel(status){
  }
 }
 function panel(){
- if(!resetIfChanged())return '';
+ if(!resetIfChanged()||!(tcIsCompanyPrincipal()||record.ownerUid===tcUser?.uid))return '';
  const s=record.data;
- let html='<div class="card" id="tcIphoneDailySmsStatusV241"><h3>📲 SMS diario — 6:30 a. m.</h3>'+
+ let html='<div class="card" id="tcIphoneDailySmsStatusV241"><h3>📲 Diagnóstico SMS diario</h3>'+
    '<p class="hint">Diagnóstico del recordatorio para administradores, separado de los avisos de devolución de herramientas.</p>'+
    '<p class="hint"><b>El envío automático sale solo del Android encargado de SMS.</b> iPhone consulta el estado, pero no puede enviar SMS automáticamente con la aplicación cerrada.</p>';
  if(record.error)html+='<p class="hint" style="color:#9e2424">No se pudo consultar el estado: '+esc(record.error)+'</p>';
@@ -65,14 +71,12 @@ function panel(){
  return html;
 }
 window.tcIphoneRefreshDailySmsV241=function(){void refresh(true);};
-if(typeof tcCloudView==='function'){
- const previous=tcCloudView;
- tcCloudView=function(...args){const h=previous.apply(this,args);return h+panel();};
-}
+const previous=homeView;
+homeView=function(...args){return previous.apply(this,args)+panel();};
 const originalRender=render;
 render=function(...args){
  const result=originalRender.apply(this,args);
- if(page==='cloud'&&resetIfChanged())setTimeout(()=>void refresh(false),0);
+ if(page==='home'&&resetIfChanged())setTimeout(()=>void refresh(false),0);
  return result;
 };
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh(true);});
