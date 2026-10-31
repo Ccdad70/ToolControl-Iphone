@@ -84,7 +84,7 @@ function tcLoadZxing(){
     script.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
     script.async=true;
     script.onload=()=>resolve(!!window.ZXing?.BrowserMultiFormatReader);
-    script.onerror=()=>resolve(false);
+    script.onerror=()=>{tcZxingLoadPromise=null;resolve(false);};
     document.head.appendChild(script);
   });
   return tcZxingLoadPromise;
@@ -1589,7 +1589,7 @@ async function openContinuousBrowserScanner(){
   try{
     // Intentar abrir la cámara siempre, aunque la API BarcodeDetector no esté disponible.
     // Antes se comprobaba BarcodeDetector primero y se omitía por completo el acceso a la cámara.
-    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
     const video=$('scanVideo');if(!video||!continuousSession?.active)return closeScan();
     video.srcObject=scanStream;
     await video.play();
@@ -1849,7 +1849,7 @@ async function openBrowserScanner(){
     const nativeAvailable=typeof BarcodeDetector!=='undefined';
     if(!nativeAvailable && !(await tcLoadZxing())){hint.textContent='No se pudo cargar el lector QR. Comprueba internet o escribe el código.';return;}
     if(!$('scanVideo'))return;
-    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
     const video=$('scanVideo');if(!video)return closeScan();
     video.srcObject=scanStream;await video.play();
     const acceptCode=raw=>{const result=String(raw||'').trim();if(!result)return;closeScan();if(scanDone){const done=scanDone;scanDone=null;done(result)}playScanBeep();toast('Código escaneado')};
@@ -2301,6 +2301,7 @@ tcCloudView=function(){
 <script src="./tc-iphone-followup-2.4.js"></script>
 <script src="./tc-iphone-inventory-v24.js"></script>
 <script src="./tc-iphone-scanner-frame-v24.js"></script>
+<script src="./tc-iphone-camera-pro-v2611.js"></script>
 <script src="./tc-iphone-home-android-v24.js"></script>
 <script src="./tc-iphone-daily-admin-v24.js"></script>
 <script src="./tc-iphone-daily-sms-status-v241.js"></script>
