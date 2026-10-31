@@ -30,6 +30,7 @@ jobs:
           node tests/test-iphone-scanner-frame-v24.cjs
           node --check tc-iphone-home-android-v24.js
           node --check tc-iphone-history-v269.js
+          node tests/test-iphone-history-v269.cjs
           grep -q 'tc_history_v263_reset' tc-iphone-history-v269.js
           grep -q 'tc-iphone-history-v269.js' index.html
           grep -q 'tc-iphone-history-v269.js' sw.js
