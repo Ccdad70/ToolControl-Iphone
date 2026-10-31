@@ -1,6 +1,6 @@
 // ToolControl iPhone: cache de la aplicación, no sesiones ni respuestas privadas de Supabase.
-const CACHE='toolcontrol-iphone-v2611-history-and-sms-20261030';
-const SHELL=['./toolcontrol-app-icon.png','./toolcontrol-logo.png','./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js','./tc-iphone-daily-admin-v24.js','./tc-iphone-daily-sms-status-v241.js','./tc-iphone-history-v269.js','./tc-iphone-camera-pro-v2611.js','./tc-iphone-worker-sms-history-v2611.js'];
+const CACHE='toolcontrol-iphone-v2611-android-visual-20261031';;
+const SHELL=['./toolcontrol-app-icon.png','./toolcontrol-logo.png','./index.html','./manifest.webmanifest','./icon.svg','./tc-iphone-updates-2.2.js','./tc-iphone-followup-2.4.js','./tc-iphone-inventory-v24.js','./tc-iphone-scanner-frame-v24.js','./tc-iphone-home-android-v24.js','./tc-iphone-daily-admin-v24.js','./tc-iphone-daily-sms-status-v241.js','./tc-iphone-history-v269.js','./tc-iphone-camera-pro-v2611.js','./tc-iphone-worker-sms-history-v2611.js','./tc-iphone-android-visual-v2611.js'];
 self.addEventListener('install',event=>event.waitUntil(
   caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())
 ));
@@ -16,7 +16,7 @@ self.addEventListener('fetch',event=>{
    try{const live=await fetch(event.request);if(live.ok)cache.put('./index.html',live.clone());return live}
    catch{return(await cache.match('./index.html'))||Response.error()}
   }
-  if(u.pathname.endsWith('/tc-iphone-updates-2.2.js') || u.pathname.endsWith('/tc-iphone-inventory-v24.js') || u.pathname.endsWith('/tc-iphone-scanner-frame-v24.js') || u.pathname.endsWith('/tc-iphone-home-android-v24.js') || u.pathname.endsWith('/tc-iphone-daily-admin-v24.js') || u.pathname.endsWith('/tc-iphone-daily-sms-status-v241.js') || u.pathname.endsWith('/tc-iphone-camera-pro-v2611.js') || u.pathname.endsWith('/tc-iphone-worker-sms-history-v2611.js') || u.pathname.endsWith('/tc-iphone-history-v269.js')){
+  if(u.pathname.endsWith('/tc-iphone-updates-2.2.js') || u.pathname.endsWith('/tc-iphone-inventory-v24.js') || u.pathname.endsWith('/tc-iphone-scanner-frame-v24.js') || u.pathname.endsWith('/tc-iphone-home-android-v24.js') || u.pathname.endsWith('/tc-iphone-daily-admin-v24.js') || u.pathname.endsWith('/tc-iphone-daily-sms-status-v241.js') || u.pathname.endsWith('/tc-iphone-camera-pro-v2611.js') || u.pathname.endsWith('/tc-iphone-worker-sms-history-v2611.js') || u.pathname.endsWith('/tc-iphone-android-visual-v2611.js') || u.pathname.endsWith('/tc-iphone-history-v269.js')){
    try{
     const live=await fetch(event.request);
     if(live.ok){await cache.put(event.request,live.clone());return live}
