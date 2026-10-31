@@ -91,7 +91,8 @@ function modernHome(){
   '</small></div><span>›</span></button>'+
   '<div class="tc-secondary-links"><button onclick="go(\'history\')">🕘 Historial</button>'+
   '<button onclick="go(\'report\')">📄 Reportes y respaldo</button>'+
-  '<button onclick="go(\'sms\')">📲 SMS trabajadores</button></div>';
+  '<button onclick="go(\'sms\')">📲 SMS trabajadores</button>'+
+  '<button onclick="go(\'about\')">ⓘ Acerca de ToolControl</button></div>';
 }
 window.tcIphoneVisualScan2611=function(){
  go('inventory');
