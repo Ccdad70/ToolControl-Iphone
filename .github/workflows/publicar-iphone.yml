@@ -29,6 +29,10 @@ jobs:
           node tests/test-inventory-iphone-v24.cjs
           node tests/test-iphone-scanner-frame-v24.cjs
           node --check tc-iphone-home-android-v24.js
+          node --check tc-iphone-history-v269.js
+          grep -q 'tc_history_v263_reset' tc-iphone-history-v269.js
+          grep -q 'tc-iphone-history-v269.js' index.html
+          grep -q 'tc-iphone-history-v269.js' sw.js
           node --check tc-iphone-daily-sms-status-v241.js
           node tests/test-iphone-daily-sms-v241.cjs
           node --check tc-iphone-daily-admin-v24.js
