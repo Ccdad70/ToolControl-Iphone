@@ -1,5 +1,16 @@
 # ToolControl-Iphone
 
+## ToolControl iPhone V2.6.9 — sincronización con Android (30 octubre 2026)
+
+- Las pantallas de recordatorio matutino consultan y actualizan el sistema ACTUAL de Android: `tc_morning_v263_config_get` / `tc_morning_v263_config_save`. El antiguo horario `tc_daily_admin_config` ya no se utiliza para esta configuración.
+- El principal puede activar/desactivar recordatorios, cambiar el horario de America/New_York, días de envío y texto (10–480 caracteres). Supabase valida la autorización. Si ajusta la hora desde el iPhone debe abrir ToolControl en el Android autorizado antes de la hora indicada para sincronizar la alarma nativa; iOS no puede programarla por él.
+- Consulta de estado por usuario vía `tc_morning_v269_iphone_status` (privacidad enforced en Supabase). La cuenta principal y el remitente autorizado ven totales. Diferencia envío aceptado por Android vs. acuse de entrega opcional de la operadora.
+- El inventario, búsqueda de herramientas por modelo/serie/QR, recuadro de escáner, agrupación, asignaciones, devoluciones, seguimiento y gestión de teléfonos administrativos existentes se mantienen.
+- iPhone continúa como PWA. NO puede disparar SMS automáticos en segundo plano, manipular permisos Android ni reemplazar la SIM del remitente autorizado. Ninguna función PUSH está activa.
+- El enlace de iPhone es el mismo: https://ccdad70.github.io/ToolControl-Iphone/ . Para actualizar una instalación existente, abrir desde Safari en línea y volver a iniciar la app agregada a Inicio.
+- La validación automatizada de GitHub Pages prueba las funciones de iPhone; la captura de cámara, el envío final y la sincronización Android necesitan verificación en dispositivos reales.
+
+
 ## Publicación automática
 
 El flujo `.github/workflows/publicar-iphone.yml` publica esta versión mediante GitHub Pages. Para instalarla, abre la dirección Pages en Safari y pulsa Compartir → Añadir a pantalla de inicio.
