@@ -1,4 +1,4 @@
-/* ToolControl iPhone V2.4 — seguimiento en tiempo real, compartido con Android. */
+/* ToolControl iPhone V2.6.11 — seguimiento en tiempo real, compartido con Android. */
 (function(){
 'use strict';
 let follow24={scope:'',rows:[],loaded:false,busy:false,last:0,expanded:false,error:''};
@@ -47,7 +47,7 @@ function card24(){
  const rows=[...follow24.rows].sort((a,b)=>(b.flag==='lost'?100:due24(b.due_on)>0?10:0)-(a.flag==='lost'?100:due24(a.due_on)>0?10:0));
  const overdue=rows.filter(r=>due24(r.due_on)>0).length;
  const flagged=rows.filter(r=>r.flag==='lost'||r.flag==='attention').length;
- return '<div class="card" id="followCard24"><h3>📋 Seguimiento de herramientas · V2.4</h3>'+
+ return '<div class="card" id="followCard24"><h3>📋 Seguimiento de herramientas · V2.6.11</h3>'+
  '<p class="hint">Android y iPhone comparten los préstamos, fechas, observaciones y responsable.</p>'+
  (follow24.error?'<p class="hint">⚠️ No se pudo consultar Supabase: '+esc(follow24.error)+'</p>':'')+
  (!navigator.onLine?'<p class="hint">Sin Internet. Los datos pueden estar desactualizados.</p>':'')+
@@ -95,7 +95,7 @@ tcCloudView=function(){const content=oldCloud(),scope=scope24();if(!scope)return
 const oldHome=homeView;
 homeView=function(){const content=oldHome(),scope=scope24();if(!scope)return content;
  if(scope!==follow24.scope){follow24={scope,rows:[],loaded:false,busy:false,last:0,expanded:false,error:''};setTimeout(()=>void reload24(true),0);}
- return '<div class="card"><h3>📋 Seguimiento V2.4</h3><p class="hint">'+(follow24.loaded?follow24.rows.length+' herramientas prestadas · '+follow24.rows.filter(r=>due24(r.due_on)>0).length+' vencidas':'Consulta el estado de las devoluciones')+'</p><button class="btn outline" onclick="go(\'cloud\')">Ver seguimiento</button></div>'+content;
+ return '<div class="card"><h3>📋 Seguimiento V2.6.11</h3><p class="hint">'+(follow24.loaded?follow24.rows.length+' herramientas prestadas · '+follow24.rows.filter(r=>due24(r.due_on)>0).length+' vencidas':'Consulta el estado de las devoluciones')+'</p><button class="btn outline" onclick="go(\'cloud\')">Ver seguimiento</button></div>'+content;
 };
 setInterval(()=>{if(!document.hidden&&scope24())void reload24();},20000);
 window.addEventListener('focus',()=>{if(scope24())void reload24(true);});
