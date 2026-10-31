@@ -1,4 +1,4 @@
-/* ToolControl iPhone V2.6.9 — mismo recordatorio matutino de Android.
+/* ToolControl iPhone V2.6.11 — mismo recordatorio matutino de Android.
  * Configuracion REAL: tc_morning_v263_config_get/save.
  * El iPhone NO emite SMS en segundo plano. Solo el Android autorizado realiza envios.
  * Al cambiar la hora desde iPhone, el Android emisor debe sincronizar su alarma local.
@@ -45,7 +45,7 @@ async function refresh(force){
 }
 function view(){
  if(!normalize())return '';
- let html='<div class="card" id="tcMorningIphone269"><h3>🌅 Recordatorio matutino · Android / iPhone V2.6.9</h3>'+
+ let html='<div class="card" id="tcMorningIphone269"><h3>🌅 Recordatorio matutino · Android / iPhone V2.6.11</h3>'+
  '<p class="hint">Configuracion compartida con Android por Supabase. El SMS sale exclusivamente del Android autorizado; el iPhone no realiza envios SMS automaticos.</p>';
  if(!principal()){
    return html+'<p class="hint">La configuracion y el mensaje estan protegidos. El administrador principal puede cambiar el horario desde esta pantalla.</p></div>';
