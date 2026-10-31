@@ -28,9 +28,17 @@ jobs:
           node --check tc-iphone-scanner-frame-v24.js
           node tests/test-inventory-iphone-v24.cjs
           node tests/test-iphone-scanner-frame-v24.cjs
+          node --check tc-iphone-camera-pro-v2611.js
+          node tests/test-iphone-camera-pro-v2611.cjs
+          grep -q 'tc-iphone-camera-pro-v2611.js' index.html
+          grep -q 'tc-iphone-camera-pro-v2611.js' sw.js
           node --check tc-iphone-home-android-v24.js
           node --check tc-iphone-history-v269.js
           node tests/test-iphone-history-v269.cjs
+          node --check tc-iphone-worker-sms-history-v2611.js
+          node tests/test-iphone-worker-sms-history-v2611.cjs
+          grep -q 'tc-iphone-worker-sms-history-v2611.js' index.html
+          grep -q 'tc-iphone-worker-sms-history-v2611.js' sw.js
           grep -q 'tc_history_v263_reset' tc-iphone-history-v269.js
           grep -q 'tc-iphone-history-v269.js' index.html
           grep -q 'tc-iphone-history-v269.js' sw.js
