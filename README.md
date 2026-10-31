@@ -1,5 +1,18 @@
 # ToolControl-Iphone
 
+## ToolControl iPhone V2.6.11 — paridad funcional con Android (31 octubre 2026)
+
+**Enlace de instalación SIN CAMBIOS:** https://ccdad70.github.io/ToolControl-Iphone/
+
+Se sincronizaron con la referencia Android V2.6.11 las funciones compatibles con iOS: inventario y herramientas/QR/código de barras; búsqueda por nombre, modelo y serie; agrupación en Inventario General; escaneo de registro, entregas y devoluciones continuas; seguimiento de vencimientos/pérdidas; administradores y sus teléfonos; historial compartido y borrado protegido; edición por el principal del mismo horario/texto/días de recordatorios matutinos; vista de estados de los mensajes de administradores y consulta de historial de SMS a trabajadores.
+
+**Escáner reforzado iPhone:** vídeo de cámara trasera a resolución ideal 1920×1080, ZXing de respaldo para QR/códigos lineales y reintento de la carga si falla, recuadro con esquinas y línea de escaneo, confirmación visual, controles de zoom manual y zoom progresivo automático cuando el navegador ofrece `MediaStreamTrack.getCapabilities().zoom`, enfoque continuo cuando esté disponible y control de linterna si `torch` está disponible. Cuando iOS no ofrece una función de cámara se oculta su control sin bloquear el lector ni la entrada manual. No se sustituye la cámara por Google Code Scanner, que no está disponible para PWA iPhone.
+
+**SMS:** el iPhone no ejecuta el `SmsManager` ni las alarmas nativas de Android. La programación de SMS en segundo plano sigue siendo exclusiva del Android autorizado. iPhone configura los mensajes en el MISMO backend y consulta resultados reales; al cambiar la hora desde iPhone, abre ToolControl en el Android remitente para sincronizar la alarma. El historial de trabajadores solo es visible al principal y no expone números. No se habilitó PUSH.
+
+Se conserva la misma URL y se actualiza el Service Worker para instalaciones de pantalla de inicio. GitHub Actions verifica los scripts y pruebas automatizadas; la cámara física requiere validación en un iPhone real.
+
+
 ## ToolControl iPhone V2.6.9 — sincronización con Android (30 octubre 2026)
 
 - Las pantallas de recordatorio matutino consultan y actualizan el sistema ACTUAL de Android: `tc_morning_v263_config_get` / `tc_morning_v263_config_save`. El antiguo horario `tc_daily_admin_config` ya no se utiliza para esta configuración.
