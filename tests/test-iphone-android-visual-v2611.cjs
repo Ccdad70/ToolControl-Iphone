@@ -38,7 +38,7 @@ const suffix=element('<section class="card" id="sms">SMS compartido conservado</
 nodes.push(prefix,brand,stats,h1,actions,h2,oldMore,suffix);
 const holder={_value:'',
  set innerHTML(s){this._value=s;},
- get innerHTML(){return nodes.filter(x=>!x.removed).map(x=>x===brand?inserted+x.label:x.label).join('');},
+ get innerHTML(){return nodes.map(x=>(x===brand?inserted:'')+(x.removed?'':x.label)).join('');},
  querySelector(selector){return selector==='.brand-attribution'?brand:null;},
  querySelectorAll(selector){return selector==='h2.section'?[h1,h2]:[];}
 };
