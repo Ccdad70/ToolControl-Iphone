@@ -32,6 +32,10 @@ jobs:
           node --check tc-iphone-daily-sms-status-v241.js
           node tests/test-iphone-daily-sms-v241.cjs
           node --check tc-iphone-daily-admin-v24.js
+          node tests/test-iphone-morning-schedule-v242.cjs
+          grep -q 'tc_morning_v263_config_save' tc-iphone-daily-admin-v24.js
+          grep -q 'tc_morning_v269_iphone_status' tc-iphone-daily-sms-status-v241.js
+          ! grep -q 'tc_daily_admin_config' tc-iphone-daily-admin-v24.js
           grep -q 'tc-iphone-daily-admin-v24.js' index.html
           grep -q 'tc-iphone-daily-admin-v24.js' sw.js
           node tests/test-iphone-home-android-v24.cjs
