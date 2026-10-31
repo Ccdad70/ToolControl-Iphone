@@ -117,8 +117,10 @@ function initWhenReady(expected,attempt=0){
  }
 }
 function scannerStart(original,args){
- reset();const expected=sequence;
+ // Both existing scanners call closeScan() before opening; take our sequence
+ // AFTER they have closed the previous session, or the new session is stale.
  const result=original.apply(this,args);
+ reset();const expected=sequence;
  // Do not replace the existing recognition callbacks or start the camera twice.
  initWhenReady(expected);
  return result;
