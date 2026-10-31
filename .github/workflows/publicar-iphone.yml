@@ -52,6 +52,10 @@ jobs:
           grep -q 'tc-iphone-daily-admin-v24.js' index.html
           grep -q 'tc-iphone-daily-admin-v24.js' sw.js
           node tests/test-iphone-home-android-v24.cjs
+          node --check tc-iphone-android-visual-v2611.js
+          node tests/test-iphone-android-visual-v2611.cjs
+          grep -q 'tc-iphone-android-visual-v2611.js' index.html
+          grep -q 'tc-iphone-android-visual-v2611.js' sw.js
           grep -q 'tc-iphone-home-android-v24.js' index.html
           grep -q 'tc-iphone-home-android-v24.js' sw.js
           grep -q 'tc-iphone-daily-sms-status-v241.js' index.html
