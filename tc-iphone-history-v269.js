@@ -1,4 +1,4 @@
-/* ToolControl iPhone V2.6.9 — historial compartido como Android.
+/* ToolControl iPhone V2.6.11 — historial compartido como Android.
  * Solo principal puede solicitar borrado; requiere BORRAR HISTORIAL y RPC protegida.
  * El corte de historial en Supabase evita que operaciones viejas revivan los registros.
  * El modulo NO ejecuta eliminaciones automaticamente al cargar.
@@ -77,7 +77,7 @@ if(typeof historyView==='function'){
   try{content=previousHistory.apply(this,args);}
   finally{state.history=original;}
   if(!k)return content;
-  let panel='<div class="card"><h3>🗂️ Historial compartido V2.6.9</h3>'+
+  let panel='<div class="card"><h3>🗂️ Historial compartido V2.6.11</h3>'+
    '<p class="hint">Los movimientos son comunes en Android y iPhone.</p>';
   if(data269.error)panel+='<p style="color:#a12727">'+esc(data269.error)+'</p>';
   if(principal())panel+='<p class="hint">Solo el administrador principal puede borrar el historial. Las herramientas y sus asignaciones no se eliminan.</p>'+
