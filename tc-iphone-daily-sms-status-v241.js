@@ -1,4 +1,4 @@
-/* ToolControl iPhone V2.6.9 — estados del MISMO sistema SMS Android V2.6.9.
+/* ToolControl iPhone V2.6.11 — estados del MISMO sistema SMS Android V2.6.11.
  * Solo lectura. Seguridad: RPC tc_morning_v269_iphone_status restringe datos por usuario.
  * Ni esta web ni el service worker pueden enviar SMS automaticos desde iOS.
  */
@@ -41,7 +41,7 @@ function stateLabel(v){
 function panel(){
  if(!reset())return '';
  const data=record.data;
- let html='<div class="card" id="tcIphoneMorningStatus269"><h3>📨 SMS matutinos · estado compartido V2.6.9</h3>'+
+ let html='<div class="card" id="tcIphoneMorningStatus269"><h3>📨 SMS matutinos · estado compartido V2.6.11</h3>'+
   '<p class="hint">Lee en Supabase los envíos realizados por el teléfono Android autorizado. iPhone no envía SMS por su cuenta.</p>';
  if(record.error)html+='<p role="alert" style="color:#a12727">No se pudo consultar el estado: '+esc(record.error)+'</p>';
  if(!data){
