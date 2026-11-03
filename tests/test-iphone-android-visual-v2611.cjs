@@ -8,7 +8,7 @@ const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest')
 new vm.Script(js);
 assert(html.includes('<script src="./tc-iphone-android-visual-v2611.js"></script>'));
 assert(sw.includes('tc-iphone-android-visual-v2611.js'));
-assert(sw.includes('toolcontrol-iphone-v2611-android-visual-20261031'));
+assert(sw.includes('toolcontrol-iphone-v2614-voces-20261102'));
 assert.equal(manifest.start_url,'./index.html','preservar inicio instalado');
 assert.equal(manifest.theme_color,'#0755a0');
 assert(!js.includes('sendTextMessage('),'iPhone no envía SMS sin consentimiento');
@@ -74,7 +74,7 @@ assert.match(home,/Seguimiento conservado/);
 assert.match(home,/SMS compartido conservado/);
 assert.doesNotMatch(home,/Tarjetas azules antiguas|Más opciones antiguas|Versión V2\.4/);
 const about=vm.runInContext('aboutView()',ctx);
-assert.match(about,/Versión iPhone 2\.6\.11/);
+assert.match(about,/Versión iPhone 2\.6\.14/);
 vm.runInContext('render()',ctx);
 assert.match(bar.innerHTML,/tc-navscan/);
 assert.match(bar.innerHTML,/Escanear/);

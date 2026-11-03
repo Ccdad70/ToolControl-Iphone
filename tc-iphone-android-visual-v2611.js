@@ -3,7 +3,7 @@
    No changes to tool state, account permissions or SMS backend. */
 (function(){
 'use strict';
-const VERSION='2.6.11';
+const VERSION='2.6.14';
 const style=document.createElement('style');
 style.id='tc-iphone-android-visual-v2611-css';
 style.textContent=`
@@ -140,7 +140,7 @@ render=function(...args){
 if(typeof aboutView==='function'){
  const originalAbout=aboutView;
  aboutView=function(...args){
-  return originalAbout.apply(this,args).replace(/Versión (?:iPhone )?2\.4/g,'Versión iPhone 2.6.11');
+  return originalAbout.apply(this,args).replace(/Versión (?:iPhone )?2\.4/g,'Versión iPhone 2.6.14');
  };
 }
 window.tcIphoneAndroidVisual2611={version:VERSION,modernHome};
