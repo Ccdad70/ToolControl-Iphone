@@ -23,6 +23,10 @@ jobs:
       - name: Validar JavaScript y caché de iPhone
         run: |
           node --check tc-iphone-updates-2.2.js
+          node --check tc-iphone-voice-v2614.js
+          node tests/test-iphone-voice-v2614.cjs
+          grep -q 'tc-iphone-voice-v2614.js' index.html
+          grep -q 'tc-iphone-voice-v2614.js' sw.js
           node --check tc-iphone-followup-2.4.js
           node --check tc-iphone-inventory-v24.js
           node --check tc-iphone-scanner-frame-v24.js

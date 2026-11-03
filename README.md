@@ -1,5 +1,13 @@
 # ToolControl-Iphone
 
+## ToolControl iPhone V2.6.14 — voz en español (2 noviembre 2026)
+
+**La dirección de instalación no cambia:** https://ccdad70.github.io/ToolControl-Iphone/
+
+Se agregó un módulo de confirmación por voz en español para operaciones validadas: registro individual/múltiple, entrega de herramienta con nombre de trabajador, devolución de herramienta con nombre de trabajador y resumen de recepción con pendientes. Botón flotante para activar/desactivar la voz. El anuncio se produce después de confirmar el guardado; no anuncia un código rechazado, repetido ni una operación fallida. En Safari iOS puede requerirse interacción para activar el audio; solo habla con la app abierta y con audio permitido.
+
+El iPhone sigue siendo PWA, no envía SMS en segundo plano y no se incluyeron PUSH. No se modificó ToolControl Android V2.6.14 ni el esquema o datos de Supabase. El funcionamiento real de la voz y la cámara requiere comprobarse en un iPhone físico.
+
 ## ToolControl iPhone V2.6.11 — paridad funcional con Android (31 octubre 2026)
 
 **Enlace de instalación SIN CAMBIOS:** https://ccdad70.github.io/ToolControl-Iphone/
