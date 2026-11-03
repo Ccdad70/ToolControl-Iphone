@@ -1,15 +1,18 @@
-name: Publicar ToolControl para iPhone
+name: Publicar aviso de desactivación ToolControl iPhone
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: toolcontrol-iphone-pages
   cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,66 +21,32 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Preparar versión iPhone 2.2 sin selector de envío SMS
-        run: python3 .github/scripts/prepare_iphone.py
-      - name: Validar JavaScript y caché de iPhone
+      - name: Verificar que ToolControl iPhone no se publique
+        shell: bash
         run: |
-          node --check tc-iphone-updates-2.2.js
-          node --check tc-iphone-voice-v2614.js
-          node tests/test-iphone-voice-v2614.cjs
-          grep -q 'tc-iphone-voice-v2614.js' index.html
-          grep -q 'tc-iphone-voice-v2614.js' sw.js
-          node --check tc-iphone-followup-2.4.js
-          node --check tc-iphone-inventory-v24.js
-          node --check tc-iphone-scanner-frame-v24.js
-          node tests/test-inventory-iphone-v24.cjs
-          node tests/test-iphone-scanner-frame-v24.cjs
-          node --check tc-iphone-camera-pro-v2611.js
-          node tests/test-iphone-camera-pro-v2611.cjs
-          grep -q 'tc-iphone-camera-pro-v2611.js' index.html
-          grep -q 'tc-iphone-camera-pro-v2611.js' sw.js
-          node --check tc-iphone-home-android-v24.js
-          node --check tc-iphone-history-v269.js
-          node tests/test-iphone-history-v269.cjs
-          node --check tc-iphone-worker-sms-history-v2611.js
-          node tests/test-iphone-worker-sms-history-v2611.cjs
-          grep -q 'tc-iphone-worker-sms-history-v2611.js' index.html
-          grep -q 'tc-iphone-worker-sms-history-v2611.js' sw.js
-          grep -q 'tc_history_v263_reset' tc-iphone-history-v269.js
-          grep -q 'tc-iphone-history-v269.js' index.html
-          grep -q 'tc-iphone-history-v269.js' sw.js
-          node --check tc-iphone-daily-sms-status-v241.js
-          node tests/test-iphone-daily-sms-v241.cjs
-          node --check tc-iphone-daily-admin-v24.js
-          node tests/test-iphone-morning-schedule-v242.cjs
-          grep -q 'tc_morning_v263_config_save' tc-iphone-daily-admin-v24.js
-          grep -q 'tc_morning_v269_iphone_status' tc-iphone-daily-sms-status-v241.js
-          ! grep -q 'tc_daily_admin_config' tc-iphone-daily-admin-v24.js
-          grep -q 'tc-iphone-daily-admin-v24.js' index.html
-          grep -q 'tc-iphone-daily-admin-v24.js' sw.js
-          node tests/test-iphone-home-android-v24.cjs
-          node --check tc-iphone-android-visual-v2611.js
-          node tests/test-iphone-android-visual-v2611.cjs
-          grep -q 'tc-iphone-android-visual-v2611.js' index.html
-          grep -q 'tc-iphone-android-visual-v2611.js' sw.js
-          grep -q 'tc-iphone-home-android-v24.js' index.html
-          grep -q 'tc-iphone-home-android-v24.js' sw.js
-          grep -q 'tc-iphone-daily-sms-status-v241.js' index.html
-          grep -q 'tc-iphone-daily-sms-status-v241.js' sw.js
-          grep -q 'tc-iphone-scanner-frame-v24.js' index.html
-          grep -q 'tc-iphone-scanner-frame-v24.js' sw.js
-          grep -q 'tc-iphone-inventory-v24.js' index.html
-          grep -q 'tc-iphone-inventory-v24.js' sw.js
-          grep -q 'tc_followup_list' tc-iphone-followup-2.4.js
+          set -euo pipefail
+          grep -Fq 'LINK FUE DESACTIVADO' index.html
+          grep -Fq 'POR SU CREADOR' index.html
+          grep -Fq 'LINK FUE DESACTIVADO' sw.js
+          if grep -Eq '<script[[:space:]]+src=' index.html; then
+            echo 'ERROR: La pantalla de cierre no puede cargar scripts de ToolControl' >&2
+            exit 1
+          fi
           node --check sw.js
-          grep -q "tc_admin_phone_save" tc-iphone-updates-2.2.js
-          grep -q "tcSmsViewerFetch" tc-iphone-updates-2.2.js
+      - name: Preparar sitio estático de cierre (sin archivos de aplicación)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public-disabled
+          cp index.html sw.js public-disabled/
+          touch public-disabled/.nojekyll
+          test "$(find public-disabled -maxdepth 1 -type f | wc -l)" -eq 3
       - uses: actions/configure-pages@v5
         with:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
-      - name: Publicar sitio
+          path: public-disabled
+      - name: Publicar aviso de desactivación
         id: deployment
         uses: actions/deploy-pages@v4
