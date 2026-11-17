@@ -1620,7 +1620,7 @@ function directoryOnly(){return OFFICIAL_SOURCES.filter(it=>!REPLACED_OFFICIAL_I
 function movieCatalogItems(){const seen=new Set();return [...state.movieRecentItems,...state.moviePopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function seriesCatalogItems(){const seen=new Set();return [...state.seriesRecentItems,...state.seriesPopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function isRetiredStarterTitle(it){return (it?.kind==='movie'||it?.kind==='series')&&(it?.openLicense===true||it?.free===true||it?.sample===true||String(it?.id||'').startsWith('open-')||String(it?.id||'').startsWith('demo-')||String(it?.id||'').startsWith('official-vod-'));}
-function allItems(){return [...venezuelaFeaturedCards(),...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>x.browserPlayable===true&&!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>x.browserPlayable===true&&!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
 function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
@@ -1643,7 +1643,7 @@ function artwork(it){
   }
   return cover;
  }
- if(it?.official||it?.direct||it?.embedType==='youtube')return '<div class="official-art tone-'+(String(it.title||'').length%4+1)+'"><span class="official-flag">'+esc(it.flag||'🌍')+'</span><strong>'+esc(it.short||it.title)+'</strong><small>'+ (it.embedType==='youtube'?'▶ YOUTUBE EN VIVO':it.direct?'▶ VER CANAL':'SITIO OFICIAL ↗')+'</small></div>';
+ if(it?.official||it?.direct||it?.embedType==='youtube')return '<div class="official-art tone-'+(String(it.title||'').length%4+1)+'"><span class="official-flag">'+esc(it.flag||'🌍')+'</span><strong>'+esc(it.short||it.title)+'</strong><small>'+ (it.embedType==='youtube'?'▶ YOUTUBE OFICIAL':it.direct?'▶ VER CANAL':'SITIO OFICIAL ↗')+'</small></div>';
  if(safe)return '<img loading="lazy" decoding="async" src="'+esc(src)+'" alt="'+esc(it?.title||'')+'" onerror="this.style.display=\'none\'">';
  return '<div class="faux-art tone-'+(String(it?.title||'').length%4+1)+'"></div>';
 }
@@ -1655,7 +1655,7 @@ function card(it,portrait=false){
  const tag=it.watchmode?'button':isNetflix?'a':'button';
  const attrs=it.watchmode?'data-action="play" data-id="'+esc(it.id)+'"':isNetflix?'href="'+esc(it.url)+'" rel="noopener noreferrer"':'data-action="play" data-id="'+esc(it.id)+'"';
  return `<${tag} class="poster-card ${it.kind==='live'?'type-live':it.kind==='series'?'type-series':'type-movie'}" ${attrs} aria-label="${it.watchmode?(it.kind==='series'?'Abrir serie: ':'Abrir película: '):isNetflix?'Abrir película en Netflix: ':'Reproducir '}${esc(displayTitle(it))}">
- <span class="poster-img">${artwork(it)}${it.watchmode?'<span class="playmark">▶ VER '+(it.kind==='series'?'SERIE':'PELÍCULA')+'</span>':isNetflix?'<span class="playmark" style="background:#b71226">▶ VER PELÍCULA</span>':it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ VIDEO PROBADO':it.featuredVenezuela?'▶ TOCA PARA PROBAR':unchecked?'▶ VER CANAL':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
+ <span class="poster-img">${artwork(it)}${it.watchmode?'<span class="playmark">▶ VER '+(it.kind==='series'?'SERIE':'PELÍCULA')+'</span>':isNetflix?'<span class="playmark" style="background:#b71226">▶ VER PELÍCULA</span>':it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ REPRODUCCIÓN COMPROBADA':it.embedType==='youtube'?'▶ CANAL OFICIAL':it.featuredVenezuela?'▶ TOCA PARA PROBAR':'▶ VER CANAL'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
  <span class="poster-meta"><span style="min-width:0"><span class="poster-title">${esc(displayTitle(it))}</span><span class="poster-sub">${it.watchmode?'Con suscripción · '+(it.kind==='series'?'Serie':'Película'):isNetflix?'Con suscripción · '+esc(it.genre||'Película'):esc(it.category||'General')}${it.kind==='series'?' · Serie':''}${progress?.time>1?' · En progreso':''}</span></span></span></${tag}>`;
 }
 function seriesOnce(items){const seen=new Set();return items.filter(it=>{let k=it.seriesName||it.title;if(seen.has(k))return false;seen.add(k);return true;});}
@@ -1709,7 +1709,7 @@ function mountHomePreview(){
 }
 function renderHome(){
  const items=allItems(),movies=movieCatalogItems(),series=seriesOnce([...seriesCatalogItems(),...items.filter(it=>it.kind==='series'&&!it.watchmode)]);
- const live=items.filter(it=>it.kind==='live'&&it.browserPlayable===true&&!isRemovedVeChannel(it));
+ const live=items.filter(it=>it.kind==='live'&&(it.browserPlayable===true||it.embedType==='youtube')&&!isRemovedVeChannel(it));
  const continued=items.filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
  const fav=items.filter(it=>state.favorites.includes(it.id));
  const featured=movies.find(it=>it.image)||series.find(it=>it.image)||movies[0]||series[0]||null;
@@ -1872,7 +1872,7 @@ function renderCountryOfficialAccess(country){
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
- const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>it.browserPlayable===true&&!it.featuredVenezuela);
+ const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>(it.browserPlayable===true||it.embedType==='youtube')&&!it.featuredVenezuela&&!isRemovedVeChannel(it));
  const featured=chosen?.[0]==='ve'?chooseItems(venezuelaFeaturedCards(),{category:state.category,q:state.liveQuery}):[];
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
@@ -1885,7 +1885,7 @@ function renderLive(){
  +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países consultados</button></div>'
  +'<div class="live-shortcuts">'+COUNTRIES.slice(0,10).map(c=>'<button class="country-chip '+(state.category===c[1]+' '+c[2]?'on':'')+'" data-action="quick-country" data-code="'+c[0]+'">'+c[1]+' '+esc(c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</button>').join('')+'</div></div>'
  +(chosen?.[0]==='ve'?'<section style="margin:20px 0 24px"><div class="section-head"><h2>🇻🇪 Canales de Venezuela</h2></div><div class="tile-grid">'+featured.map(it=>card(it,true)).join('')+'</div></section>':'')
- +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' canales disponibles'+selectedName+'</span></div>'
+ +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' canales para explorar'+selectedName+'</span></div>'
  +(state.loadingCountry?'<div class="message" role="status">Preparando canales gratuitos… Puedes cambiar de país cuando quieras.</div>':'')
  +(shown.length?'<div class="tile-grid">'+shown.map(it=>card(it,true)).join('')+'</div>':
   '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+(state.loadingCountry?'Preparando canales…':'No hay canales disponibles por ahora')+'</h3><p>Explora los accesos oficiales que aparecen más abajo o selecciona otro país.</p></div>')
