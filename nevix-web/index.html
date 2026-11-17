@@ -1461,6 +1461,22 @@ function renderCatalog(kind){let title=kind==='movie'?'Películas':'Series';let 
  if(!items.length)return pageTitle(title,'Tu colección personal, organizada.')+empty(`Todavía no hay ${title.toLowerCase()}`);
  let filtered=chooseItems(items,{category:state.category});if(kind==='series')filtered=seriesOnce(filtered);
  return pageTitle(title,kind==='movie'?'Toca una portada y comienza a ver gratis, sin suscripciones.':'Episodios abiertos y tus series personales. Un toque para reproducir.')+`<div class="message">✅ Selección gratuita y legal: cortometrajes abiertos y una película de larga duración. Los títulos de Blender se comparten con atribución CC BY; Sita Sings the Blues es CC0. La reproducción depende de Internet y del servidor del archivo, pero NÉVIX no solicita suscripciones.</div>`+filterChips(items)+(filtered.length?`<div class="tile-grid">${filtered.map(it=>card(it,true)).join('')}</div>`:empty('No hay contenido en esta categoría',false));}
+
+const COUNTRY_OFFICIAL_PORTALS={
+ pt:[['RTP1','https://www.rtp.pt/play/direto/rtp1'],['RTP2','https://www.rtp.pt/play/direto/rtp2'],['RTP Notícias','https://www.rtp.pt/rtpnoticias'],['RTP Memória','https://www.rtp.pt/play/direto/rtpmemoria'],['RTP Mundo','https://www.rtp.pt/play/direto/rtpmundo'],['RTP Madeira','https://www.rtp.pt/play/direto/rtpmadeira'],['RTP Açores','https://www.rtp.pt/play/direto/rtpacores'],['RTP Play','https://www.rtp.pt/play/direto']],
+ gb:[['ITVX (requiere cuenta gratis)','https://www.itv.com/watch']],
+ ie:[['Virgin Media Play (requiere registro)','https://www.virginmediatelevision.ie/'],['RTÉ Player','https://www.rte.ie/player/']]
+};
+function renderCountryOfficialAccess(country){
+ if(!country)return '';
+ const links=(COUNTRY_OFFICIAL_PORTALS[country[0]]||[]).map(x=>({title:x[0],url:x[1]}));
+ for(const x of directoryOnly().filter(x=>x.category===country[1]+' '+country[2]&&!isRemovedVeChannel(x))){if(!links.some(y=>y.url===x.url))links.push({title:x.short||x.title,url:x.url});}
+ const seen=new Set();
+ const cards=links.filter(x=>{if(!/^https:\/\//.test(x.url)||seen.has(x.url))return false;seen.add(x.url);return true;}).slice(0,15)
+ .map(x=>'<a style="display:block;padding:13px;background:#16213c;border:1px solid #425382;border-radius:12px;color:white" href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer"><b>📺 '+esc(x.title)+'</b><small style="display:block;color:#aebee4">Abrir canal en su web oficial ↗</small></a>').join('');
+ const guide='<a style="display:block;padding:13px;background:#16213c;border:1px solid #425382;border-radius:12px;color:white" href="https://shahrukhalid.github.io/nexonic-iptv/" target="_blank" rel="noopener noreferrer"><b>🌍 Explorar directorio gratuito</b><small style="display:block;color:#aebee4">Ver otras fuentes por país ↗</small></a>';
+ return '<section style="margin:20px 0"><h2>Canales y accesos de '+esc(country[1]+' '+country[2])+'</h2><p style="color:#b6c3dd;font-size:13px">Si una señal no puede reproducirse dentro de NÉVIX, puedes abrir la web oficial del canal. Algunas emisiones dependen de tu región o de una cuenta gratuita.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">'+cards+guide+'</div></section>';
+}
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
@@ -1480,9 +1496,10 @@ function renderLive(){
  +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' disponibles'+selectedName+'</span></div>'
  +(state.loadingCountry?'<div class="message">⌛ '+esc(state.loadProgress||'Comprobando las señales de este país')+'. Solo aparecen las que iniciaron video en este dispositivo.</div>':'')
  +(shown.length?'<div class="tile-grid">'+shown.map(it=>card(it,true)).join('')+'</div>':
- '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+ (state.loadingCountry?'Verificando canales…':'Aún no hay otras señales comprobadas')+'</h3><p>Selecciona un país y pulsa «Buscar / actualizar señales del país». Si no hay fuentes oficiales accesibles, no mostraremos enlaces rotos ni canales de pago.</p></div>')
+ '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+ (state.loadingCountry?'Verificando canales…':'Sin reproducción HLS confirmada')+'</h3><p>Selecciona un país y pulsa «Buscar / actualizar señales del país». Si no hay fuentes oficiales accesibles, no mostraremos enlaces rotos ni canales de pago.</p></div>')
  +(available.length>shown.length?'<button class="btn" data-action="show-more-live">Ver más canales</button>':'')
 
+ +renderCountryOfficialAccess(chosen)
  +'<div class="message">Fuente principal: Nexonic IPTV; señal candidata adicional de Globovisión, sin autorización de integración confirmada. La tarjeta de Globovisión permanece visible aunque su señal todavía no haya superado la prueba. La reproducción HLS puede fallar por restricciones del emisor, CORS, ubicación o derechos. Si falla al reproducirlo, NÉVIX lo retirará del catálogo de este dispositivo.</div>';
 }
 function renderFavorites(){let fav=allItems().filter(it=>state.favorites.includes(it.id));let continued=allItems().filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
