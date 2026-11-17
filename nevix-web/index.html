@@ -370,25 +370,6 @@ const LATAM_OFFICIAL_EMBEDS=[
   "verifiedPlayback": false
  },
  {
-  "id": "embed-co-canal-rcn",
-  "title": "Canal RCN · Señal digital 24 horas (prueba)",
-  "short": "Canal RCN",
-  "flag": "🇨🇴",
-  "category": "🇨🇴 Colombia",
-  "kind": "live",
-  "genre": "Entretenimiento",
-  "embedType": "youtube",
-  "videoId": "_ARCBovOsTE",
-  "url": "https://www.youtube.com/watch?v=_ARCBovOsTE",
-  "website": "https://www.canalrcn.com/",
-  "description": "Emisión en vivo de la cuenta oficial Canal RCN. La reproducción integrada puede fallar si el emisor desactiva la inserción o cambia la señal.",
-  "direct": true,
-  "unverified": true,
-  "source": "Canal RCN oficial en YouTube",
-  "image": "",
-  "verifiedPlayback": false
- },
- {
   "id": "embed-ar-c5n",
   "title": "C5N · En vivo",
   "short": "C5N",
@@ -1343,7 +1324,7 @@ function renderLive(){
  const selectedName=chosen?` · ${chosen[1]} ${chosen[2]}`:'';
  return pageTitle('TV en vivo',`${list.length} accesos configurados · ${state.worldChannels.length} nuevos del directorio internacional`)
  +`<div class="live-control-panel"><div class="live-control-title">📺 TV gratis · Reproducción con un toque</div>
- <p>Selecciona un canal y NÉVIX abrirá dentro de la app su reproductor oficial de YouTube cuando el emisor permita insertarlo. Sin pago por suscripción del contenido seleccionado. Estas publicaciones son gratuitas en YouTube, pero su emisión, bloqueo geográfico y permiso de inserción pueden cambiar. Las señales IPTV experimentales siguen disponibles al quitar el filtro.</p>
+ <p>Selecciona un canal y NÉVIX abrirá dentro de la app su reproductor oficial de YouTube cuando el emisor permita insertarlo. Sin pago por suscripción del contenido seleccionado. Estas publicaciones son gratuitas en YouTube, pero pueden mostrar anuncios. NÉVIX no puede pulsar «Saltar anuncio» automáticamente; después del anuncio YouTube continúa con el directo. Su emisión, bloqueo geográfico y permiso de inserción pueden cambiar. Las señales IPTV experimentales siguen disponibles al quitar el filtro.</p>
  <div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">${options}</select></label>
  <button class="btn btn-primary" data-action="load-country" ${state.loadingCountry?'disabled':''}>${state.loadingCountry?'⌛ Cargando…':'⬇ Explorar más señales (sin verificar)'}</button>
  <button class="btn btn-sm" data-action="reset-country-filter">🌐 Todos los cargados</button></div>
@@ -1353,7 +1334,7 @@ function renderLive(){
  <div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" value="${esc(state.liveQuery)}" type="search" placeholder="Buscar canal: noticias, cine, música…" autocomplete="off" aria-label="Buscar canales"></label>
  <label class="direct-toggle"><input type="checkbox" id="live-direct-toggle" ${state.showOnlyPlayable?'checked':''}/> Mostrar integrados y accesos oficiales seleccionados</label><span class="live-count">${available.length} canales${selectedName}</span></div>
  <div class="message nevix-diagnostics-info"><b>🧪 Diagnóstico del reproductor:</b> <button class="btn btn-sm" data-action="test-hls" type="button">▶ Probar video HLS</button><span class="nevix-context">${location.protocol==='https:'?'Modo web HTTPS':'Modo archivo local / protocolo '+esc(location.protocol)+' — algunas señales pueden bloquearse'}</span><p>Esta prueba es un video técnico, no un canal de televisión. Si funciona pero Canal i no, el problema probablemente está en esa señal o sus restricciones.</p></div>
- <div class="message live-disclaimer">▶ <b>Integración de emisiones oficiales (reproducción no verificada):</b> Colombia (Noticias Caracol y Canal RCN en prueba; Noticias RCN abre su directo oficial con un toque), Argentina (C5N, Canal 26, LN+ y TV Pública) y Estados Unidos, Francia y Alemania usan publicaciones de sus emisores en YouTube. Al pulsar intentan abrirse dentro de NÉVIX si YouTube permite la inserción; Noticias RCN abre el sitio oficial para evitar un video obsoleto. <b>Recomendación:</b> publicar esta app en HTTPS; los archivos locales <code>content://</code> pueden generar errores de reproducción. Las transmisiones pueden terminar o cambiar de ID.</div>
+ <div class="message live-disclaimer">▶ <b>Integración de emisiones oficiales (reproducción no verificada):</b> Colombia (Noticias Caracol; Noticias RCN abre su directo oficial con un toque), Argentina (C5N, Canal 26, LN+ y TV Pública) y Estados Unidos, Francia y Alemania usan publicaciones de sus emisores en YouTube. Al pulsar intentan abrirse dentro de NÉVIX si YouTube permite la inserción; Noticias RCN abre el sitio oficial para evitar un video obsoleto. <b>Recomendación:</b> publicar esta app en HTTPS; los archivos locales <code>content://</code> pueden generar errores de reproducción. Las transmisiones pueden terminar o cambiar de ID.</div>
  <div class="live-layout"><div class="channel-list" aria-label="Listado de canales">
  ${shown.map((it,i)=>`<button class="channel ${active?.id===it.id?'active':''}" data-action="select-channel" data-id="${esc(it.id)}"><span class="channel-num">${String(i+1).padStart(2,'0')}</span><span class="channel-badge">${esc(it.flag||'▣')}</span><span class="channel-body"><b>${esc(it.title)}</b><small>${it.embedType==='youtube'?'▶ EMISIÓN PUBLICADA · YOUTUBE':it.official?'↗ WEB OFICIAL':it.unverified||it.direct?'◌ HLS SIN VERIFICAR':'▶ MI SEÑAL'} · ${esc(it.category)}</small></span><span class="play-one-tap">▶</span></button>`).join('')||'<p class="list-empty">No hay canales integrados para este país. Desactiva el filtro si deseas explorar señales experimentales.</p>'}
  ${available.length>shown.length?`<button class="btn btn-sm more-channels" data-action="show-more-live">Mostrar más (${available.length-shown.length} restantes) ↓</button>`:''}</div>
