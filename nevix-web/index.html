@@ -352,19 +352,39 @@ const LATAM_OFFICIAL_EMBEDS=[
  },
  {
   "id": "embed-co-rcn",
-  "title": "Noticias RCN · En vivo",
+  "title": "Noticias RCN · Directo oficial",
   "short": "Noticias RCN",
   "flag": "🇨🇴",
   "category": "🇨🇴 Colombia",
   "kind": "live",
   "genre": "Noticias",
-  "embedType": "youtube",
-  "videoId": "88KF_wfs3uc",
-  "url": "https://www.youtube.com/watch?v=88KF_wfs3uc",
+  "official": true,
+  "embedType": "official-link",
+  "url": "https://www.youtube.com/@NoticiasRCN/live",
   "website": "https://www.noticiasrcn.com/",
-  "description": "Transmisión informativa publicada por Noticias RCN en YouTube; la emisión puede actualizarse.",
+  "description": "Se retiró el identificador de video antiguo que daba «Video no disponible». Un toque abre el directo vigente publicado por la cuenta oficial en YouTube; la reproducción integrada de esta emisión no está confirmada.",
+  "direct": false,
+  "unverified": true,
+  "source": "Canal oficial de Noticias RCN",
+  "image": "",
+  "verifiedPlayback": false
+ },
+ {
+  "id": "embed-co-canal-rcn",
+  "title": "Canal RCN · Señal digital 24 horas (prueba)",
+  "short": "Canal RCN",
+  "flag": "🇨🇴",
+  "category": "🇨🇴 Colombia",
+  "kind": "live",
+  "genre": "Entretenimiento",
+  "embedType": "youtube",
+  "videoId": "_ARCBovOsTE",
+  "url": "https://www.youtube.com/watch?v=_ARCBovOsTE",
+  "website": "https://www.canalrcn.com/",
+  "description": "Emisión en vivo de la cuenta oficial Canal RCN. La reproducción integrada puede fallar si el emisor desactiva la inserción o cambia la señal.",
   "direct": true,
-  "source": "Publicación del emisor en YouTube",
+  "unverified": true,
+  "source": "Canal RCN oficial en YouTube",
   "image": "",
   "verifiedPlayback": false
  },
@@ -1298,8 +1318,8 @@ function artwork(it){if(it?.official||it?.direct||it?.embedType==='youtube')retu
  return `<div class="faux-art tone-${String(it?.title||'').length%4+1}"></div>`;
 }
 function displayTitle(it){return it.kind==='series'?(it.seriesName||it.title):it.title;}
-function card(it,portrait=false){let fav=state.favorites.includes(it.id);const progress=state.progress[it.id];return `<button class="poster-card" data-action="play" data-id="${esc(it.id)}" aria-label="Reproducir ${esc(displayTitle(it))}">
- <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.unverified?'SEÑAL NO VERIFICADA':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
+function card(it,portrait=false){let fav=state.favorites.includes(it.id);const progress=state.progress[it.id];const unchecked=Boolean(it.unverified||(it.embedType==="youtube"&&!it.verifiedPlayback));return `<button class="poster-card" data-action="play" data-id="${esc(it.id)}" aria-label="Reproducir ${esc(displayTitle(it))}">
+ <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${unchecked?'SEÑAL SIN VERIFICAR':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
  <span class="poster-meta"><span style="min-width:0"><span class="poster-title">${esc(displayTitle(it))}</span><span class="poster-sub">${esc(it.category||'General')}${it.kind==='series'?' · Serie':''}${progress?.time>1?' · En progreso':''}</span></span></span></button>`;}
 function seriesOnce(items){const seen=new Set();return items.filter(it=>{let k=it.seriesName||it.title;if(seen.has(k))return false;seen.add(k);return true;});}
 function rail(title,items,route){if(!items.length)return '';return `<div class="section-head"><h2>${esc(title)}</h2><button class="link-button" data-action="nav" data-view="${route}">Ver todo ›</button></div><div class="horizontal-grid">${items.map(it=>card(it)).join('')}</div>`;}
