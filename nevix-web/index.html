@@ -1275,6 +1275,7 @@ function parseCountryPlaylist(text,country){
   if(country[0]==='ve'&&REMOVED_VE_CHANNELS.test(title.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim()))continue;
   if(country[0]==='ve'&&community&&!/^(?:Telesur(?: \(English HD\))?|TVes|PromarTV|ShowVen TV|Televisora de Oriente|Vepaco TV|Catatumbo TV|Grande TV|Isla TV|TVS|Canal C del Zulia|Tu TV|BTA TV)$/i.test(title))continue;
   if(/\b(adult|xxx|porn|casino|gambling)\b/i.test(title))continue;
+  if(community&&/^(?:canal 11|sport\s*tv|sky\s*sports|hbo|max premium|disney\s*channel)(?:\b|\s|$)/i.test(title))continue;
   seen.add(url);
   const group=(meta.match(/group-title\s*=\s*["']([^"']+)["']/i)||[])[1]||'TV gratuita';
   const source=(community?'Nexonic comunidad verificada · ':'Nexonic oficial · ')+country[2];
@@ -1465,6 +1466,7 @@ function renderCatalog(kind){let title=kind==='movie'?'Películas':'Series';let 
 const COUNTRY_OFFICIAL_PORTALS={
  pt:[['RTP1','https://www.rtp.pt/play/direto/rtp1'],['RTP2','https://www.rtp.pt/play/direto/rtp2'],['RTP Notícias','https://www.rtp.pt/rtpnoticias'],['RTP Memória','https://www.rtp.pt/play/direto/rtpmemoria'],['RTP Mundo','https://www.rtp.pt/play/direto/rtpmundo'],['RTP Madeira','https://www.rtp.pt/play/direto/rtpmadeira'],['RTP Açores','https://www.rtp.pt/play/direto/rtpacores'],['RTP Play','https://www.rtp.pt/play/direto']],
  gb:[['ITVX (requiere cuenta gratis)','https://www.itv.com/watch']],
+ cu:[['Teveo — TV cubana','https://teveo.cu/'],['Portal Televisión Cubana','https://www.tvcubana.icrt.cu/']],
  ie:[['Virgin Media Play (requiere registro)','https://www.virginmediatelevision.ie/'],['RTÉ Player','https://www.rte.ie/player/']]
 };
 function renderCountryOfficialAccess(country){
