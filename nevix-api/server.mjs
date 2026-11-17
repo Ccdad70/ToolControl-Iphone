@@ -20,7 +20,7 @@ async function query(path,params={}){
  try{
   const r=await fetch(url,{headers:{'X-API-Key':KEY,'Accept':'application/json'},signal:AbortSignal.timeout(12000)});
   spent++;
-  if(!r.ok){const error=r.status===401||r.status===403?'invalid_key':r.status===429?'provider_quota':'watchmode_error';throw {status:r.status===429?429:502,error,message:'Watchmode no pudo completar la consulta (HTTP '+r.status+')'};}
+  if(!r.ok){const error=r.status===401||r.status===403?'invalid_key':r.status===429?'provider_quota':'watchmode_error';const safeMessage=String(await r.text()).slice(0,240).replaceAll(KEY,'[hidden]');console.error('Watchmode provider response HTTP='+r.status+' endpoint='+path+' details='+safeMessage);throw {status:r.status===429?429:502,error,message:'Watchmode no pudo completar la consulta (HTTP '+r.status+')'};}
   return r.json();
  }finally{inflight--;}
 }
