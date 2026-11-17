@@ -91,7 +91,7 @@
       </div>
    </header>
    <main id="main" tabindex="-1"><div class="loading">Cargando NÉVIX TV…</div></main>
-   <footer>© NÉVIX TV · V2.0 personal · Solo fuentes y contenidos autorizados</footer>
+   <footer>© NÉVIX TV · V2.1 personal · Solo fuentes y contenidos autorizados</footer>
  </div>
 </div>
 <div id="modal-root"></div>
@@ -1275,6 +1275,7 @@ async function loadCountry(code,force=false){
  }
  if(state.loadingCountry)return;
  state.loadingCountry=code;render();
+ if(force){state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));}
  try{
   const url='https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+code+'.m3u';
   const response=await fetch(url,{mode:'cors',cache:'no-store'});
