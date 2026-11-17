@@ -94,3 +94,15 @@ const server=http.createServer(async(req,res)=>{
  }catch(e){send(res,e.status||502,{error:e.error||'unavailable',message:e.message||'No se pudo consultar el catálogo'});}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY)));
+
+async function checkCatalogHealth(){
+ if(!KEY)return;
+ try{
+  const data=await query('/list-titles',{types:'movie',regions:'US,CO',source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1});
+  const rows=Array.isArray(data?.titles)?data.titles:[];
+  console.log('Watchmode health check: '+(rows.length?'catalog_ok':'catalog_empty')+'; count='+rows.length+'; pages='+String(data?.total_pages||0));
+ }catch(e){
+  console.error('Watchmode health check: error='+String(e.error||e.name||'unknown')+'; status='+String(e.status||0));
+ }
+}
+void checkCatalogHealth();
