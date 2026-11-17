@@ -1287,17 +1287,25 @@ function parseCountryPlaylist(text,country){
  items.sort((a,b)=>{const rank=x=>/news|noticias|general|public|cultura|educa/i.test(x.genre||'')?0:1;return rank(a)-rank(b);});
  return items.slice(0,48);
 }
-async function checkBrowserStream(it){
- // Primera fase: manifest HLS accesible con CORS desde este navegador.
- const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),5500);
+async function checkBrowserStream(it, signal){
+ // Una comprobación lenta nunca debe bloquear la selección de otro país.
+ if(signal?.aborted)return false;
+ const ctrl=new AbortController();
+ const cancelManifest=()=>ctrl.abort();
+ signal?.addEventListener('abort',cancelManifest,{once:true});
+ const manifestTimeout=setTimeout(()=>ctrl.abort(),4500);
  try{
   const response=await fetch(it.url,{mode:'cors',credentials:'omit',cache:'no-store',signal:ctrl.signal,redirect:'follow'});
   if(!response.ok)return false;
   const txt=await response.text();
   if(!txt.trimStart().startsWith('#EXTM3U')||txt.length>500000)return false;
- }catch(_){return false;}finally{clearTimeout(timeout);}
- // Segunda fase: reproducir cuadros reales en un <video> temporal, con sonido silenciado.
- // Manifest accesible ≠ video reproducible. Si el dispositivo no decodifica, NO publicamos la señal.
+ }catch(_){return false;}
+ finally{
+  clearTimeout(manifestTimeout);
+  signal?.removeEventListener('abort',cancelManifest);
+ }
+ if(signal?.aborted)return false;
+ // La reproducción se comprueba sin mostrar controles ni mensajes técnicos.
  return await new Promise(resolve=>{
   const holder=document.createElement('div');
   holder.setAttribute('aria-hidden','true');
@@ -1307,22 +1315,26 @@ async function checkBrowserStream(it){
   video.setAttribute('playsinline','');video.playsInline=true;
   video.autoplay=true;video.preload='auto';
   holder.appendChild(video);document.body.appendChild(holder);
-  let hls=null,ended=false;
+  let hls=null,ended=false,confirmedTimer=null;
   const finish=ok=>{
    if(ended)return;
-   ended=true;clearTimeout(t);
+   ended=true;clearTimeout(t);clearTimeout(confirmedTimer);
+   signal?.removeEventListener('abort',cancelVideo);
    try{video.pause();}catch(_){}
    try{hls?.destroy();}catch(_){}
    try{video.removeAttribute('src');video.load();}catch(_){}
    holder.remove();resolve(Boolean(ok));
   };
-  const confirmed=()=>{if(!video.paused && video.readyState>=2 && video.videoWidth>16 && video.videoHeight>16)finish(true);};
-  video.addEventListener('playing',()=>{confirmed();if(!ended)setTimeout(confirmed,600);});
+  const cancelVideo=()=>finish(false);
+  const confirmed=()=>{if(!ended&&!video.paused&&video.readyState>=2&&video.videoWidth>16&&video.videoHeight>16)finish(true);};
+  const t=setTimeout(()=>finish(false),8500);
+  signal?.addEventListener('abort',cancelVideo,{once:true});
+  if(signal?.aborted){finish(false);return;}
+  video.addEventListener('playing',()=>{confirmed();if(!ended)confirmedTimer=setTimeout(confirmed,600);});
   video.addEventListener('timeupdate',confirmed);
   video.addEventListener('loadeddata',()=>{if(!ended&&video.readyState>=2&&!video.paused)confirmed();});
   video.addEventListener('error',()=>finish(false));
   video.addEventListener('encrypted',()=>finish(false));
-  const t=setTimeout(()=>finish(false),11500);
   try{
    const lib=window.Hls;
    if(lib?.isSupported?.()){
@@ -1337,6 +1349,7 @@ async function checkBrowserStream(it){
   }catch(_){finish(false);}
  });
 }
+
 const VE_PUBLIC_HLS_CANDIDATES=[
  {name:'Globovisión',url:'https://vcp5.myplaytv.com/globovision/globovision/playlist.m3u8'},
  {name:'Globovisión',url:'https://59d39900ebfb8.streamlock.net/globo-720p/globo-720p/playlist.m3u8'}
@@ -1384,41 +1397,90 @@ function veExperimentalCandidates(country){
  }));
 }
 
+let activeCountryLoad=null;
+let countryLoadSerial=0;
+const countryRetryAt=Object.create(null);
 async function loadCountry(code,force=false){
  const country=COUNTRIES.find(x=>x[0]===code);
  if(!country)return toast('Selecciona un país válido.');
- state.category=country[1]+' '+country[2];state.liveShown=100;state.liveQuery='';
- if(!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||'')))){
-  render();return;
- }
- if(state.loadingCountry)return;
- state.loadingCountry=code;render();
- if(force){state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));}
+ const countryName=country[1]+' '+country[2];
+ state.category=countryName;
+ state.liveShown=100;
+ state.liveQuery='';
+ // Una selección nueva tiene prioridad absoluta, incluso si hay una prueba en curso.
+ if(activeCountryLoad?.code===code&&!force){render();return;}
+ if(activeCountryLoad){activeCountryLoad.controller.abort();activeCountryLoad=null;}
+ state.loadingCountry=null;
+ state.loadProgress='';
+ const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&x.browserPlayable===true);
+ const recentEmpty=!force&&Date.now()-(countryRetryAt[code]||0)<90000;
+ if(cached||recentEmpty){render();return;}
+ if(force)state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));
+ const controller=new AbortController();
+ const token=++countryLoadSerial;
+ activeCountryLoad={code,token,controller};
+ const active=()=>activeCountryLoad?.token===token&&!controller.signal.aborted;
+ state.loadingCountry=code;
+ state.loadProgress='Preparando los canales de '+country[2]+'…';
+ render();
+ // La búsqueda puede continuar en segundo plano, pero la pantalla deja de esperar.
+ const shortWait=setTimeout(()=>{
+  if(!active())return;
+  state.loadingCountry=null;
+  state.loadProgress='';
+  if(state.view==='live'&&state.category===countryName)render();
+ },6500);
+ // Ni la lista ni la comprobación de señales podrán quedar pendientes indefinidamente.
+ const totalLimit=setTimeout(()=>controller.abort(),65000);
+ let fetchLimit=null;
  try{
   const playlistCode=code==='gb'?'uk':code;
-   const url=code==='int'?'https://shahrukhalid.github.io/nexonic-iptv/playlists/categories/news.m3u':'https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+playlistCode+'.m3u';
-  const response=await fetch(url,{mode:'cors',cache:'no-store'});
-  if(!response.ok)throw Error('El país aún no tiene una lista oficial disponible');
-  const text=await response.text();
-  const candidates=parseCountryPlaylist(text,country).concat(veExperimentalCandidates(country));
-  const playable=[];const checkedPublicNames=new Set();state.loadProgress='Comprobando video real de '+country[2]+'…';render();
-  for(let i=0;i<candidates.length;i+=3){
-   const checked=await Promise.all(candidates.slice(i,i+3).map(async x=>({item:x,ok:await checkBrowserStream(x)})));
-   for(const c of checked){if(!c.ok||state.failedStreams.includes(c.item.id))continue;
-    if(c.item.source.startsWith('Lista pública experimental')){if(checkedPublicNames.has(c.item.short))continue;checkedPublicNames.add(c.item.short);}
-    playable.push({...c.item,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:Date.now()});}
-   state.loadProgress='Probados '+Math.min(i+3,candidates.length)+' de '+candidates.length+' · '+playable.length+' con video';
-   state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).concat(playable);
-   if(state.view==='live'&&state.category===country[1]+' '+country[2])render();
+  const url=code==='int'?'https://shahrukhalid.github.io/nexonic-iptv/playlists/categories/news.m3u':'https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+playlistCode+'.m3u';
+  fetchLimit=setTimeout(()=>controller.abort(),9000);
+  const response=await fetch(url,{mode:'cors',cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('Lista temporalmente no disponible');
+  const playlist=await response.text();
+  clearTimeout(fetchLimit);fetchLimit=null;
+  if(!active())return;
+  const candidates=parseCountryPlaylist(playlist,country).concat(veExperimentalCandidates(country));
+  const playable=[],checkedPublicNames=new Set();
+  for(let i=0;i<candidates.length;i+=4){
+   if(!active())return;
+   const results=await Promise.all(candidates.slice(i,i+4).map(async item=>({item,ok:await checkBrowserStream(item,controller.signal)})));
+   if(!active())return;
+   for(const result of results){
+    if(!result.ok||state.failedStreams.includes(result.item.id))continue;
+    if(result.item.source.startsWith('Lista pública experimental')){
+     if(checkedPublicNames.has(result.item.short))continue;
+     checkedPublicNames.add(result.item.short);
+    }
+    playable.push({...result.item,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:Date.now()});
+   }
+   // Las señales válidas aparecen por lotes; las fallidas no bloquean la interfaz.
+   state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code||!/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).concat(playable);
+   if(state.view==='live'&&state.category===countryName)render();
   }
-  state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).concat(playable);
+  if(!active())return;
   if(!state.loadedCountries.includes(code))state.loadedCountries.push(code);
-  state.loadingCountry=null;state.loadProgress='';store();render();
-  toast(playable.length?playable.length+' señales HLS accesibles de '+country[2]+' (reproducción aún por confirmar).':'Sin señales oficiales compatibles confirmadas para '+country[2]+'.');
+  countryRetryAt[code]=Date.now();
+  store();
+  if(state.view==='live'&&state.category===countryName)render();
+  if(!playable.length)toast('Por ahora no hay emisiones compatibles de '+country[2]+'. Puedes usar los accesos oficiales.');
  }catch(err){
-  state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||'')));
-  state.loadingCountry=null;state.loadProgress='';render();
-  toast('No se pudieron verificar canales de '+country[2]+': '+(err?.message||'error de red'));
+  if(active()){
+   countryRetryAt[code]=Date.now();
+   if(state.view==='live'&&state.category===countryName)render();
+   toast('No fue posible actualizar '+country[2]+'. Intenta de nuevo más tarde.');
+  }
+ }finally{
+  if(fetchLimit!==null)clearTimeout(fetchLimit);
+  clearTimeout(shortWait);clearTimeout(totalLimit);
+  if(activeCountryLoad?.token===token){
+   activeCountryLoad=null;
+   state.loadingCountry=null;
+   state.loadProgress='';
+   if(state.view==='live'&&state.category===countryName)render();
+  }
  }
 }
 
@@ -1487,23 +1549,22 @@ function renderLive(){
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
  const selectedName=chosen?' · '+chosen[1]+' '+chosen[2]:'';
- return pageTitle('TV en vivo',(available.length+featured.filter(it=>it.browserPlayable).length)+' señales con video comprobado'+selectedName)
- +'<div class="live-control-panel"><div class="live-control-title">📺 TV GRATIS · REPRODUCCIÓN PROBADA</div>'
- +'<p>Un toque intenta iniciar el directo dentro de NÉVIX. El catálogo usa fuentes oficiales y algunas venezolanas comunitarias del directorio Nexonic. Globovisión cuenta con fuentes públicas alternativas que se intentan abrir automáticamente al tocar su tarjeta; la reproducción depende del servidor y sus permisos. Solo aparecen como reproducibles si un video temporal comienza a cargar cuadros reales en tu navegador. Esto no confirma autorización del emisor, sonido, ni reproducción continua. No incluye videos de YouTube con anuncios ni canales de suscripción. Que el manifiesto responda no garantiza imagen y sonido: una señal puede restringirse, caducar o impedir la inserción.</p>'
+ return pageTitle('TV en vivo',chosen?'Canales gratuitos de '+chosen[2]:'Explora televisión gratuita por país')
+ +'<div class="live-control-panel"><div class="live-control-title">📺 TELEVISIÓN GRATIS</div>'
+ +'<p>Selecciona un país. Las emisiones que se puedan reproducir aparecerán automáticamente, sin interrumpir la navegación.</p>'
  +'<div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">'+options+'</select></label>'
- +'<button class="btn btn-primary" data-action="load-country" '+(state.loadingCountry?'disabled':'')+'>'+(state.loadingCountry?'⌛ Reproduciendo muestras de canales…':'↻ Verificar reproducción de canales')+'</button>'
- +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países ya consultados</button></div>'
+ +'<button class="btn btn-primary" data-action="load-country">'+(state.loadingCountry?'⌛ Preparando canales…':'↻ Actualizar canales')+'</button>'
+ +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países consultados</button></div>'
  +'<div class="live-shortcuts">'+COUNTRIES.slice(0,10).map(c=>'<button class="country-chip '+(state.category===c[1]+' '+c[2]?'on':'')+'" data-action="quick-country" data-code="'+c[0]+'">'+c[1]+' '+esc(c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</button>').join('')+'</div></div>'
- +(chosen?.[0]==='ve'?'<section style="margin:20px 0 24px"><div class="section-head"><h2>🇻🇪 Canales principales de Venezuela</h2></div><p style="margin:0 0 12px;opacity:.8">Globovisión siempre aparece en su tarjeta grande. <b>VIDEO PROBADO</b> significa que se inició imagen en este dispositivo; <b>TOCA PARA PROBAR</b> significa que la señal todavía no está confirmada. Un canal visible no significa que esté disponible o autorizado para redistribución.</p><div class="tile-grid">'+featured.map(it=>card(it,true)).join('')+'</div></section>':'')
- +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' disponibles'+selectedName+'</span></div>'
- +(state.loadingCountry?'<div class="message">⌛ '+esc(state.loadProgress||'Comprobando las señales de este país')+'. Solo aparecen las que iniciaron video en este dispositivo.</div>':'')
+ +(chosen?.[0]==='ve'?'<section style="margin:20px 0 24px"><div class="section-head"><h2>🇻🇪 Canales de Venezuela</h2></div><div class="tile-grid">'+featured.map(it=>card(it,true)).join('')+'</div></section>':'')
+ +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' canales disponibles'+selectedName+'</span></div>'
+ +(state.loadingCountry?'<div class="message" role="status">Preparando canales gratuitos… Puedes cambiar de país cuando quieras.</div>':'')
  +(shown.length?'<div class="tile-grid">'+shown.map(it=>card(it,true)).join('')+'</div>':
- '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+ (state.loadingCountry?'Verificando canales…':'Sin reproducción HLS confirmada')+'</h3><p>Selecciona un país y pulsa «Buscar / actualizar señales del país». Si no hay fuentes oficiales accesibles, no mostraremos enlaces rotos ni canales de pago.</p></div>')
+  '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+(state.loadingCountry?'Preparando canales…':'No hay canales disponibles por ahora')+'</h3><p>Explora los accesos oficiales que aparecen más abajo o selecciona otro país.</p></div>')
  +(available.length>shown.length?'<button class="btn" data-action="show-more-live">Ver más canales</button>':'')
-
- +renderCountryOfficialAccess(chosen)
- +'<div class="message">Fuente principal: Nexonic IPTV; señal candidata adicional de Globovisión, sin autorización de integración confirmada. La tarjeta de Globovisión permanece visible aunque su señal todavía no haya superado la prueba. La reproducción HLS puede fallar por restricciones del emisor, CORS, ubicación o derechos. Si falla al reproducirlo, NÉVIX lo retirará del catálogo de este dispositivo.</div>';
+ +renderCountryOfficialAccess(chosen);
 }
+
 function renderFavorites(){let fav=allItems().filter(it=>state.favorites.includes(it.id));let continued=allItems().filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
  return pageTitle('Mi lista','Accede rápidamente a tus favoritos y continúa la reproducción.')+(fav.length?rail('Favoritos',fav,'favorites'):empty('Aún no tienes favoritos',false))+(continued.length?rail('Continuar viendo',continued,'favorites'):'');}
 function renderSearch(){const query=state.search;let result=chooseItems(allItems(),{q:query});return pageTitle('Buscar','Encuentra canales, películas, series y episodios.')+`<label class="searchbox"><span class="sr-only">Buscar contenido</span><input id="global-search" placeholder="Buscar por nombre o categoría…" autocomplete="off" value="${esc(query)}" /></label><div class="section-head"><h2>${query?`${result.length} resultado(s)`:'Todo el contenido'}</h2></div>`+(result.length?`<div class="tile-grid">${seriesOnce(result.filter(it=>it.kind==='series')).concat(result.filter(it=>it.kind!=='series')).map(it=>card(it,true)).join('')}</div>`:empty('No encontramos coincidencias',false));}
