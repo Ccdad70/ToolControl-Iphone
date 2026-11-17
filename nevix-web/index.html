@@ -1698,9 +1698,25 @@ function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE
 function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
 function toast(message){els.toast.textContent=message;els.toast.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>els.toast.classList.remove('show'),3500);}
 function pageTitle(title,sub){return `<div class="eyebrow">TU ENTRETENIMIENTO</div><h1 class="page-title">${esc(title)}</h1><p class="page-sub">${esc(sub)}</p>`;}
-function artwork(it){if(it?.watchmode&&/^https:\/\/[a-z0-9.-]+(?:\/|$)/i.test(String(it.image||'')))return '<img loading="lazy" decoding="async" src="'+esc(it.image)+'" alt="Póster de '+esc(it.title)+'" onerror="this.hidden=true;this.nextElementSibling.hidden=false;"><div class="official-art" hidden><strong>'+esc(it.title)+'</strong><small>'+esc(it.year||'')+'</small></div>';if(it?.watchmode)return '<div class="official-art" style="background:linear-gradient(145deg,#080f27,#1b304a,#354b70);border:1px solid #3b506c"><span class="official-flag" style="font-size:12px;color:#9cccee">PELÍCULA</span><strong>'+esc(it.title)+'</strong><small>'+esc(it.year||'')+' · '+esc(it.category||'Cine')+'</small></div>';if(it?.netflix)return '<div class="official-art" style="background:linear-gradient(145deg,#0b1224,#192a42 62%,#28325a);border:1px solid #334569"><span class="official-flag" style="font-size:13px;color:#8bcbf8">PELÍCULA</span><strong>'+esc(it.title)+'</strong><small>'+esc(it.year)+' · '+esc(it.genre||'Cine')+'</small></div>';if(it?.official||it?.direct||it?.embedType==='youtube')return `<div class="official-art tone-${String(it.title||'').length%4+1}"><span class="official-flag">${esc(it.flag||'🌍')}</span><strong>${esc(it.short||it.title)}</strong><small>${it.embedType==='youtube'?'▶ YOUTUBE EN VIVO':it.direct?'▶ VER CANAL':'SITIO OFICIAL ↗'}</small></div>`;let src=DEMO_IMAGES[it?.image]||it?.image||'';
- if(src && (/^https:\/\//.test(src)||/^data:image\/jpeg;base64,/.test(src)||/^assets\/[\w.\-/]+\.(png|jpe?g|webp)$/i.test(src)))return `<img loading="lazy" src="${esc(src)}" alt="" onerror="this.style.display='none'">`;
- if(it?.kind==='movie')return '<div class="official-art tone-'+(String(it.title||'').split('').reduce((v,x)=>v+x.charCodeAt(0),0)%4+1)+'" role="img" aria-label="Portada ilustrativa de '+esc(it.title)+'" style="position:relative;display:flex;flex-direction:column;justify-content:space-between;min-height:100%;padding:18px;background:linear-gradient(155deg,#15264d,#302342 62%,#0a1629)"><small style="color:#9adce8;letter-spacing:.14em;font-size:11px">NÉVIX · CINE</small><span style="font-size:48px;opacity:.73;text-align:center">🎬</span><strong style="font-size:18px;line-height:1.2;text-shadow:0 2px 6px #000">'+esc(it.title)+'</strong><small style="opacity:.8">'+esc(it.year||'')+' · ILUSTRACIÓN</small></div>';return `<div class="faux-art tone-${String(it?.title||'').length%4+1}"></div>`;
+function movieCover(it){
+ const title=String(it.title||'Película');
+ const variant=title.split('').reduce((sum,char)=>sum+char.charCodeAt(0),0)%4+1;
+ return '<div class="official-art tone-'+variant+'" role="img" aria-label="Portada ilustrativa de '+esc(title)+'" style="position:relative;display:flex;flex-direction:column;justify-content:space-between;height:100%;padding:18px;background:linear-gradient(145deg,#102244,#33233e 58%,#0a152b);border:1px solid #354764"><small style="color:#99e0e8;letter-spacing:.14em;font-size:11px">NÉVIX · CINE</small><span style="font-size:45px;text-align:center;opacity:.65">🎬</span><strong style="font-size:18px;line-height:1.25;color:white;text-shadow:0 2px 8px #000">'+esc(title)+'</strong><small style="opacity:.83;color:#dae8fc">'+esc(it.year||'')+' · PORTADA ILUSTRATIVA</small></div>';
+}
+function artwork(it){
+ const src=DEMO_IMAGES[it?.image]||it?.image||'';
+ const safe=typeof src==='string'&&(/^https:\/\//.test(src)||/^data:image\/jpeg;base64,/.test(src)||/^assets\/[\w.\-/]+\.(png|jpe?g|webp)$/i.test(src));
+ if(it?.kind==='movie'){
+  const cover=movieCover(it);
+  if(safe){
+   return '<img loading="lazy" decoding="async" src="'+esc(src)+'" alt="Póster de '+esc(it.title)+'" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+    +cover.replace('display:flex','display:none');
+  }
+  return cover;
+ }
+ if(it?.official||it?.direct||it?.embedType==='youtube')return '<div class="official-art tone-'+(String(it.title||'').length%4+1)+'"><span class="official-flag">'+esc(it.flag||'🌍')+'</span><strong>'+esc(it.short||it.title)+'</strong><small>'+ (it.embedType==='youtube'?'▶ YOUTUBE EN VIVO':it.direct?'▶ VER CANAL':'SITIO OFICIAL ↗')+'</small></div>';
+ if(safe)return '<img loading="lazy" decoding="async" src="'+esc(src)+'" alt="'+esc(it?.title||'')+'" onerror="this.style.display=\'none\'">';
+ return '<div class="faux-art tone-'+(String(it?.title||'').length%4+1)+'"></div>';
 }
 function displayTitle(it){return it.kind==='series'?(it.seriesName||it.title):it.title;}
 function card(it,portrait=false){
