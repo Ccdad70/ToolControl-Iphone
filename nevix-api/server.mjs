@@ -1,6 +1,7 @@
 import http from 'node:http';
 const PORT=Number(process.env.PORT||10000);
 const KEY=String(process.env.WATCHMODE_API_KEY||'').trim();
+const TMDB_KEY=String(process.env.TMDB_API_KEY||'').trim();
 const ORIGIN='https://nevix-tv-personal.onrender.com';
 const memo=new Map(), pending=new Map();
 let date=new Date().toISOString().slice(0,10),spent=0,inflight=0;
@@ -23,19 +24,35 @@ async function query(path,params={}){
   return r.json();
  }finally{inflight--;}
 }
-const isWebPoster=x=>typeof x==='string'&&/^https:\/\/[a-z0-9.-]+(?:\/|$)/i.test(x)&&x.length<600;
-async function details(id){return single('details:'+id,()=>query('/title/'+id+'/details'));}
+
+async function tmdbMovie(id){
+ if(!TMDB_KEY||!/^\d{1,12}$/.test(String(id||'')))return null;
+ return single('tmdb:'+id,async()=>{
+  const url=new URL('https://api.themoviedb.org/3/movie/'+id);
+  url.searchParams.set('language','es-ES');
+  const isToken=TMDB_KEY.startsWith('eyJ')&&TMDB_KEY.length>100;
+  if(!isToken)url.searchParams.set('api_key',TMDB_KEY);
+  const response=await fetch(url,{headers:isToken?{Authorization:'Bearer '+TMDB_KEY}:{Accept:'application/json'},signal:AbortSignal.timeout(9000)});
+  if(!response.ok)return null;
+  const value=await response.json();
+  const poster=String(value.poster_path||'');
+  return {image:/^\/[a-zA-Z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)?'https://image.tmdb.org/t/p/w500'+poster:null,overview:String(value.overview||'').slice(0,350)};
+ });
+}
 async function decorate(rows){
- // list-titles does not return poster URLs. Fetch title details in small groups to preserve API credits.
- const items=rows.slice(0,12).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:''}));
+ const items=rows.slice(0,12).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
+ if(!TMDB_KEY)return items;
  for(let i=0;i<items.length;i+=3){
   await Promise.all(items.slice(i,i+3).map(async it=>{
-   try{const d=await details(it.id);const poster=[d?.poster,d?.poster_large].find(isWebPoster);it.image=poster||null;it.overview=String(d?.plot_overview||'').slice(0,350);}
-   catch(e){it.image=null;it.overview='';}
+   try{
+    const m=await tmdbMovie(it.tmdbId);
+    if(m){it.image=m.image||null;it.overview=m.overview||'';it.imageProvider=m.image?'TMDB':null;}
+   }catch{}
   }));
  }
  return items;
 }
+
 async function movies(sort,page){
  const cacheKey='movies:'+sort+':'+page;
  return single(cacheKey,async()=>{
@@ -46,7 +63,7 @@ async function movies(sort,page){
   const rows=(Array.isArray(data?.titles)?data.titles:[]).filter(x=>x&&x.id&&x.title&&x.type==='movie');
   const decorated=await decorate(rows);
   decorated.forEach((it,i)=>it.rank=(page-1)*12+i+1);
-  return {titles:decorated,section:sort,page,totalPages:Math.min(300,Math.max(1,Number(data?.total_pages)||1)),totalResults:Number(data?.total_results)||0,regions:['US','CO'],rankingMetric:sort==='popular'?'Watchmode popularity (not actual views)':'Movie original release date',partialPosters:decorated.some(x=>!x.image)};
+  return {titles:decorated,section:sort,page,totalPages:Math.min(300,Math.max(1,Number(data?.total_pages)||1)),totalResults:Number(data?.total_results)||0,regions:['US','CO'],rankingMetric:sort==='popular'?'Watchmode popularity (not actual views)':'Movie original release date',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
  });
 }
 async function movieLink(id){
@@ -62,7 +79,7 @@ const server=http.createServer(async(req,res)=>{
  if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':ORIGIN,'access-control-allow-methods':'GET, OPTIONS','access-control-allow-headers':'Content-Type'});res.end();return;}
  if(req.method!=='GET'){send(res,405,{error:'method_not_allowed'});return;}
  const url=new URL(req.url||'/','http://localhost');
- if(url.pathname==='/health'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:'watchmode-details'});return;}
+ if(url.pathname==='/health'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder'});return;}
  if(req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
  try{
   if(url.pathname==='/api/movies'){
@@ -76,4 +93,4 @@ const server=http.createServer(async(req,res)=>{
   send(res,404,{error:'not_found'});
  }catch(e){send(res,e.status||502,{error:e.error||'unavailable',message:e.message||'No se pudo consultar el catálogo'});}
 });
-server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; posters=details'));
+server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY)));
