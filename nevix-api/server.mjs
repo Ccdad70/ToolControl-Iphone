@@ -54,3 +54,18 @@ const server=http.createServer(async(req,res)=>{
  }catch(e){send(res,e.status||502,{error:e.error||'unavailable',message:e.message||'No se pudo consultar el catálogo'});}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog gateway ready; configured='+Boolean(KEY)));
+
+async function verifyWatchmodeCountries(){
+ if(!KEY)return;
+ for(const region of ['US','CO']){
+  try{
+   const response=await query('/list-titles',{types:'movie',regions:region,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1});
+   const count=Array.isArray(response?.titles)?response.titles.length:-1;
+   console.log('Watchmode API validation: region='+region+' result='+ (count>0?'ok':count===0?'empty':'invalid_response')+' titles='+count+' totalPages='+String(response?.total_pages||0));
+  }catch(err){
+   console.error('Watchmode API validation: region='+region+' result=error status='+String(err?.status||'unknown')+' reason='+String(err?.error||err?.name||'unknown'));
+  }
+ }
+}
+void verifyWatchmodeCountries();
+
