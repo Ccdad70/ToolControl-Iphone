@@ -623,6 +623,24 @@ const DIRECT_LIVE_SOURCES=[
 // Fuente de enlaces directos: https://www.thestudio.io/osvideo/
 const OPEN_MOVIES=[
  {
+  "id": "open-singularity-2026",
+  "kind": "movie",
+  "title": "Singularity",
+  "category": "Ciencia ficción",
+  "year": "2026",
+  "description": "Cortometraje de aventura espacial de Blender Studio. Gratuito, CC BY 4.0. El video oficial de YouTube puede imponer limitaciones a su reproducción integrada.",
+  "url": "https://www.youtube.com/watch?v=l5OZu-IrXpw",
+  "website": "https://studio.blender.org/projects/singularity/",
+  "videoId": "l5OZu-IrXpw",
+  "embedType": "youtube",
+  "source": "Blender Foundation · CC BY 4.0",
+  "free": true,
+  "openLicense": true,
+  "short": "Singularity (2026)",
+  "flag": "🎬",
+  "image": ""
+ },
+ {
   "id": "open-bbb",
   "kind": "movie",
   "title": "Big Buck Bunny",
@@ -1745,7 +1763,7 @@ function openOfficialEmbed(it){
  const src='https://www.youtube.com/embed/'+encodeURIComponent(vid)+'?autoplay=1&playsinline=1&enablejsapi=1&rel=0'+origin;
  const session={id:++youtubeSessionSerial,bound:false,mutedFallback:false};
  youtubeSession=session;
- els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor oficial de ${esc(it.short||it.title)}"><div class="player-top"><b>▶ ${esc(it.title)} · En vivo</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><div class="official-iframe-wrap"><iframe id="nevix-youtube-iframe" class="official-youtube-player" src="${src}" title="${esc(it.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" loading="eager" frameborder="0"></iframe></div><div class="player-status" id="youtube-player-status" aria-live="polite">▶ Iniciando transmisión automáticamente… No es necesario pulsar Play otra vez.</div><div class="nevix-engine-note">${local?'⚠️ Estás usando un archivo local ('+esc(location.protocol)+'). YouTube puede bloquear videos si no recibe una dirección HTTPS válida.':'Origen HTTPS: reproducción automática sujeta a permisos del navegador y el emisor.'} NÉVIX no elimina controles ni suscripciones.</div><div class="player-tools"><button class="btn btn-sm" id="youtube-unmute" data-action="unmute-youtube" hidden>🔊 Activar sonido</button><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Recargar transmisión</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Información</button></div><div id="player-details" class="player-diagnostics" hidden>Origen: ${esc(location.protocol)} · Motor: API oficial de YouTube con autoplay=1 y playVideo() al estar listo. Si el navegador bloquea audio automático, NÉVIX intentará iniciar silenciado. En archivos locales puede aparecer error 153 por falta de referer.</div><div class="stream-fallback"><span>Un clic solicita la reproducción inmediata. Por políticas de YouTube y Android, algunas señales pueden requerir HTTPS o impedir inserción; no podemos saltar esas restricciones.</span><a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a><a class="btn btn-sm" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Emisión en YouTube ↗</a></div></div></div>`;
+ els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor oficial de ${esc(it.short||it.title)}"><div class="player-top"><b>▶ ${esc(it.title)}${it.kind==='live'?' · En vivo':''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><div class="official-iframe-wrap"><iframe id="nevix-youtube-iframe" class="official-youtube-player" src="${src}" title="${esc(it.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" loading="eager" frameborder="0"></iframe></div><div class="player-status" id="youtube-player-status" aria-live="polite">▶ Iniciando transmisión automáticamente… No es necesario pulsar Play otra vez.</div><div class="player-tools"><button class="btn btn-sm" id="youtube-unmute" data-action="unmute-youtube" hidden>🔊 Activar sonido</button></div></div></div>`;
  // El iframe se crea durante el mismo toque. autoplay=1 actúa aun si la API carga tarde.
  // Una vez lista la API, playVideo() hace un segundo intento sin otro toque del usuario.
  requestYoutubeApi();
