@@ -1266,7 +1266,7 @@ function parseCountryPlaylist(text,country){
   const meta=lines[i].trim();
   if(!meta.startsWith('#EXTINF:'))continue;
   const community=/x-tier\s*=\s*["']community["']/i.test(meta);
-  if(community&&country[0]!=='ve')continue;
+  /* community status verified is allowed for all countries; a browser video probe is still required */
   if(community&&!/x-status\s*=\s*["']verified["']/i.test(meta))continue;
   if(/x-status\s*=\s*["'](?:restricted|unreachable|invalid|intermittent|unknown)["']/i.test(meta))continue;
   const url=String(lines[i+1]||'').trim();
@@ -1394,7 +1394,8 @@ async function loadCountry(code,force=false){
  state.loadingCountry=code;render();
  if(force){state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));}
  try{
-  const url='https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+code+'.m3u';
+  const playlistCode=code==='gb'?'uk':code;
+   const url=code==='int'?'https://shahrukhalid.github.io/nexonic-iptv/playlists/categories/news.m3u':'https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+playlistCode+'.m3u';
   const response=await fetch(url,{mode:'cors',cache:'no-store'});
   if(!response.ok)throw Error('El país aún no tiene una lista oficial disponible');
   const text=await response.text();
@@ -1430,7 +1431,7 @@ const state={
  progress:typeof saved?.progress==='object'&&saved.progress? saved.progress:{},
  pinHash:typeof saved?.pinHash==='string'?saved.pinHash:'',
  unlocked:false,
- sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&Date.now()-Number(x.testedAt||0)<6*3600000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===1?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
+ sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&Date.now()-Number(x.testedAt||0)<6*3600000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===2?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
  hls:null,playing:null,lastSave:0
 };
 const REPLACED_OFFICIAL_IDS=new Set(['official-us-abc','official-us-cbs','official-de-dw','official-fr-france24']);
@@ -1438,16 +1439,16 @@ function directoryOnly(){return OFFICIAL_SOURCES.filter(it=>!REPLACED_OFFICIAL_I
 function allItems(){return [...venezuelaFeaturedCards(),...OPEN_MOVIES,...OPEN_SERIES,...state.worldChannels.filter(x=>x.browserPlayable===true&&!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'),...state.sessionItems.filter(x=>x.kind!=='live')];}
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
-function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:1,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
+function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
 function toast(message){els.toast.textContent=message;els.toast.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>els.toast.classList.remove('show'),3500);}
 function pageTitle(title,sub){return `<div class="eyebrow">TU ENTRETENIMIENTO</div><h1 class="page-title">${esc(title)}</h1><p class="page-sub">${esc(sub)}</p>`;}
-function artwork(it){if(it?.official||it?.direct||it?.embedType==='youtube')return `<div class="official-art tone-${String(it.title||'').length%4+1}"><span class="official-flag">${esc(it.flag||'🌍')}</span><strong>${esc(it.short||it.title)}</strong><small>${it.embedType==='youtube'?'▶ YOUTUBE EN VIVO':it.direct?(it.unverified?'◌ SEÑAL SIN VERIFICAR':'▶ DIRECTO EN NÉVIX'):'SITIO OFICIAL ↗'}</small></div>`;let src=DEMO_IMAGES[it?.image]||it?.image||'';
+function artwork(it){if(it?.official||it?.direct||it?.embedType==='youtube')return `<div class="official-art tone-${String(it.title||'').length%4+1}"><span class="official-flag">${esc(it.flag||'🌍')}</span><strong>${esc(it.short||it.title)}</strong><small>${it.embedType==='youtube'?'▶ YOUTUBE EN VIVO':it.direct?'▶ VER CANAL':'SITIO OFICIAL ↗'}</small></div>`;let src=DEMO_IMAGES[it?.image]||it?.image||'';
  if(src && (/^https:\/\//.test(src)||/^data:image\/jpeg;base64,/.test(src)||/^assets\/[\w.\-/]+\.(png|jpe?g|webp)$/i.test(src)))return `<img loading="lazy" src="${esc(src)}" alt="" onerror="this.style.display='none'">`;
  return `<div class="faux-art tone-${String(it?.title||'').length%4+1}"></div>`;
 }
 function displayTitle(it){return it.kind==='series'?(it.seriesName||it.title):it.title;}
 function card(it,portrait=false){let fav=state.favorites.includes(it.id);const progress=state.progress[it.id];const unchecked=Boolean(!it.browserPlayable&&(it.unverified||(it.embedType==="youtube"&&!it.verifiedPlayback)));return `<button class="poster-card" data-action="play" data-id="${esc(it.id)}" aria-label="Reproducir ${esc(displayTitle(it))}">
- <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ VIDEO PROBADO':it.featuredVenezuela?'▶ TOCA PARA PROBAR':unchecked?'SEÑAL SIN VERIFICAR':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
+ <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ VIDEO PROBADO':it.featuredVenezuela?'▶ TOCA PARA PROBAR':unchecked?'▶ VER CANAL':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
  <span class="poster-meta"><span style="min-width:0"><span class="poster-title">${esc(displayTitle(it))}</span><span class="poster-sub">${esc(it.category||'General')}${it.kind==='series'?' · Serie':''}${progress?.time>1?' · En progreso':''}</span></span></span></button>`;}
 function seriesOnce(items){const seen=new Set();return items.filter(it=>{let k=it.seriesName||it.title;if(seen.has(k))return false;seen.add(k);return true;});}
 function rail(title,items,route){if(!items.length)return '';return `<div class="section-head"><h2>${esc(title)}</h2><button class="link-button" data-action="nav" data-view="${route}">Ver todo ›</button></div><div class="horizontal-grid">${items.map(it=>card(it)).join('')}</div>`;}
