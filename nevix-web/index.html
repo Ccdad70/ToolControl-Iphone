@@ -3,7 +3,7 @@
 <head>
  <meta charset="utf-8"/>
  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
- <meta name="theme-color" content="#070b17"/>
+ <meta name="theme-color" content="#12070b"/>
  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
  <meta http-equiv="Pragma" content="no-cache"/>
  <meta name="description" content="NÉVIX TV: TV, películas y series desde fuentes autorizadas y tu biblioteca personal"/>
@@ -261,6 +261,93 @@ footer{border-top-color:#ffffff11;color:#8591a5}
  }
 })();
 </script>
+
+<style id="nevix-elegante-rojo-v4">
+/* NÉVIX TV · Inicio elegante inspirado en el diseño aprobado (17 nov 2026) */
+:root{--bg:#090507;--surface:#180b12;--panel:#200d14;--panel2:#270d15;--line:#6b2430;--blue:#ef1d3c;--violet:#fa2341;--pink:#f44362;--muted:#bfa9ae;--text:#fff;--radi:19px}
+html{scroll-padding-top:84px}
+body{background:radial-gradient(ellipse 60vw 34vw at 92% 42%,#65091155,transparent 78%),radial-gradient(ellipse 44vw 48vw at 3% 10%,#5b091333,transparent 80%),#090507;color:#fff}
+.app-shell{display:block;min-height:100dvh}
+.sidebar,.mobile-menu-backdrop{display:none!important}
+.workarea{width:100%;min-width:0;max-width:1680px;margin:0 auto;padding:0 clamp(10px,2.2vw,36px)}
+.topbar{position:sticky;top:0;height:75px;flex:0 0 75px;z-index:25;border:1px solid #95263155;border-top:0;background:linear-gradient(100deg,#18080beF,#090709f5 66%,#1b080cf5);backdrop-filter:blur(18px);border-radius:0 0 22px 22px;padding:9px clamp(13px,2.3vw,36px);display:flex;gap:clamp(10px,2vw,34px);align-items:center;justify-content:space-between;box-shadow:0 9px 28px #0009}
+.cinema-logo{display:flex;align-items:center;gap:6px;min-width:max-content;font-weight:950;font-size:clamp(19px,2.3vw,32px);letter-spacing:-.8px;text-shadow:0 2px 17px #af002c5c}
+.cinema-logo span{font-size:.92em;line-height:1;color:#ff2146;text-shadow:0 0 18px #e91040}
+.cinema-logo b{font-weight:950;color:#fff}.cinema-logo strong{color:#f01637;font-weight:950}
+.cinema-nav{flex:1;display:flex;justify-content:center;align-items:center;gap:clamp(3px,.65vw,15px);min-width:0;overflow-x:auto;scrollbar-width:none}
+.cinema-nav::-webkit-scrollbar{display:none}
+.cinema-tab{border:1px solid transparent;border-radius:100px;background:transparent;color:#e8dbe0;padding:10px clamp(8px,1.1vw,18px);font-size:clamp(12px,1.08vw,16px);font-weight:760;white-space:nowrap;min-height:43px;transition:background .17s,border-color .17s,box-shadow .17s}
+.cinema-tab.active,.cinema-tab:hover{background:#b40821;color:#fff;border-color:#ff3850;box-shadow:0 0 16px #f10a34aa}
+.cinema-tab:focus-visible,.cinema-cat:focus-visible{outline:3px solid #fff!important;outline-offset:2px}
+.cinema-actions{display:flex;align-items:center;gap:7px}
+.cinema-icon{display:inline-grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#211219;border:1px solid #50202b;color:#fff;font-size:22px}
+.cinema-icon:hover{background:#891427}
+.topbar .bread,.topbar .top-actions,.topbar .mobile-menu{display:none!important}
+main{padding:16px 12px 55px;max-width:none}
+footer{color:#a88d94;border-color:#48121f}
+.cinema-start{border:1px solid #5e1a27;border-radius:23px;background:linear-gradient(155deg,#16080c,#090507 70%,#34070f);padding:clamp(10px,1.1vw,16px);box-shadow:0 25px 90px #0007,0 0 32px #df0a3210;overflow:hidden}
+.cinema-spotlight{display:grid;grid-template-columns:minmax(0,1.95fr) minmax(245px,.95fr);gap:13px;min-height:320px}
+.cinema-featured{position:relative;display:flex;align-items:center;overflow:hidden;min-height:320px;background:linear-gradient(118deg,#1c090b,#541d18 73%,#080607);border:1px solid #75202e;border-radius:19px;isolation:isolate}
+.cinema-art{position:absolute;inset:0;z-index:-1}
+.cinema-art img{width:100%;height:100%;object-fit:cover;object-position:68% 30%;filter:saturate(1.15) contrast(1.07)}
+.cinema-art .faux-art,.cinema-art .official-art,.cinema-art .movie-cover{width:100%;height:100%}
+.cinema-featured:before{content:"";position:absolute;z-index:0;inset:0;background:linear-gradient(90deg,#130709ff 0%,#17090bf9 30%,#160809c6 53%,#0704083b 100%)}
+.cinema-featured:after{content:"";position:absolute;inset:0;border-radius:19px;box-shadow:inset 0 -14px 30px #4806117a;pointer-events:none}
+.cinema-feature-text{z-index:1;position:relative;padding:clamp(20px,3.8vw,52px);max-width:630px}
+.cinema-kicker{font-size:11px;letter-spacing:3.5px;color:#f9c9d0;font-weight:900;text-transform:uppercase}
+.cinema-feature-text h1{font-size:clamp(28px,3.6vw,58px);line-height:1.06;margin:14px 0 17px;text-shadow:0 3px 20px #000;letter-spacing:-1.4px;max-width:15ch}
+.cinema-feature-text p{line-height:1.55;color:#f4e4e8;font-size:clamp(13px,1.14vw,17px);max-width:47ch;margin:0 0 23px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cinema-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.cinema-red-btn{background:#e4092d!important;color:#fff!important;border:1px solid #fb3851!important;box-shadow:0 4px 20px #d80038a6;border-radius:11px!important;padding:11px 18px!important;font-weight:850}
+.cinema-outline-btn{background:#110d12bb!important;color:#fff!important;border:1px solid #b58890a6!important;border-radius:11px!important;padding:11px 18px!important}
+.cinema-preview{position:relative;min-height:320px;background:radial-gradient(circle at 60% 45%,#2b1023,#090812 70%);border-radius:19px;border:1px solid #933045;overflow:hidden;display:flex;flex-direction:column}
+.cinema-preview-bar{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:7px;padding:12px 14px;background:linear-gradient(180deg,#070409c9,#08050c77);font-size:14px;font-weight:850}
+.cinema-preview-mark{border-radius:6px;padding:5px 8px;background:#e80c30;font-size:10px;letter-spacing:.6px;white-space:nowrap}
+.cinema-preview-tools{display:flex;gap:6px}
+.cinema-preview-tools button{min-width:35px;min-height:35px;border:1px solid #ffffff50;border-radius:9px;color:#fff;background:#130d15cb;font-size:20px}
+.cinema-preview-stage{flex:1;min-height:200px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cinema-preview-poster{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.cinema-preview-poster .official-art,.cinema-preview-poster .faux-art{width:100%;height:100%;border-radius:0}
+.cinema-preview-poster img{width:100%;height:100%;object-fit:cover}
+.cinema-preview-poster:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#07030b11,#05030899)}
+.cinema-preview-play{position:relative;z-index:2;display:grid;place-items:center;border:2px solid #ff6075;border-radius:50%;width:68px;height:68px;background:#d91236df;box-shadow:0 0 30px #e81248a5;color:#fff;font-size:29px}
+.cinema-preview-foot{position:relative;z-index:2;padding:11px 14px 13px;background:linear-gradient(0deg,#080408eF,#10060e9c);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cinema-preview-foot span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700}
+.cinema-preview-foot button{border:1px solid #8b5260;border-radius:9px;color:#fff;background:#250c17;padding:7px 9px;white-space:nowrap;font-size:12px}
+.cinema-preview-video{width:100%;height:100%;min-height:200px;max-height:350px;object-fit:contain;background:#000}
+.cinema-preview-iframe{width:100%;height:100%;min-height:200px;border:0;background:#000}
+.cinema-preview-error{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;background:#120a10ed;color:#f5c9d0;font-size:13px}
+.cinema-preview:fullscreen,.cinema-preview:-webkit-full-screen{width:100vw;height:100dvh;max-height:none;border-radius:0;background:#000}
+.cinema-preview:fullscreen .cinema-preview-stage,.cinema-preview:-webkit-full-screen .cinema-preview-stage{flex:1}
+.cinema-preview:fullscreen .cinema-preview-video,.cinema-preview:fullscreen .cinema-preview-iframe{max-height:none;min-height:0;height:100%}
+.cinema-menu-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0 17px}
+.cinema-cat{border:1px solid #803442a3;min-height:154px;border-radius:17px;position:relative;overflow:hidden;color:white;text-align:left;padding:20px 15px;display:flex;justify-content:flex-end;flex-direction:column;transition:transform .18s,box-shadow .18s}
+.cinema-cat:hover{transform:translateY(-3px);box-shadow:0 0 20px #e50b3788}
+.cinema-cat:nth-child(1){background:linear-gradient(130deg,#085269,#08151e 88%)}.cinema-cat:nth-child(2){background:linear-gradient(135deg,#880817,#27040b 83%)}.cinema-cat:nth-child(3){background:linear-gradient(125deg,#103b59,#070e23)}.cinema-cat:nth-child(4){background:linear-gradient(125deg,#5b0915,#15040a)}.cinema-cat:nth-child(5){background:linear-gradient(125deg,#491361,#210722)}.cinema-cat:nth-child(6){background:linear-gradient(125deg,#084245,#0c1b25)}
+.cinema-cat:after{content:"";position:absolute;inset:auto -30% -85% -20%;height:170px;background:radial-gradient(ellipse,#ff386d33,transparent 68%);pointer-events:none}
+.cinema-cat-icon{font-size:clamp(29px,3.5vw,50px);margin-bottom:auto;filter:drop-shadow(0 0 10px #fa255f6f)}
+.cinema-cat strong{font-size:clamp(14px,1.65vw,23px);line-height:1.15;position:relative;z-index:1;text-wrap:balance}
+.cinema-country-head{display:flex;align-items:center;gap:9px;margin:12px 0 10px;color:#fff;font-weight:900;font-size:18px}
+.cinema-country-head:before{content:"";display:inline-block;width:5px;height:22px;border-radius:8px;background:#fd1943;box-shadow:0 0 14px #fc2546}
+.cinema-countries{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.cinema-country{border:1px solid #a43e4f80;border-radius:14px;min-height:89px;padding:10px 14px;display:flex;align-items:end;gap:9px;color:white;text-shadow:0 2px 8px #000;text-align:left;background:linear-gradient(140deg,#3d1920,#160c11 75%);font-weight:820;overflow:hidden}
+.cinema-country:hover{border-color:#ff3656;box-shadow:0 0 17px #dc163866;background:#5c1727}
+.cinema-country .flag{font-size:28px;line-height:1}.cinema-country span:last-child{font-size:clamp(12px,1.16vw,16px);line-height:1.2}
+.cinema-below{margin:22px 5px}
+.cinema-below .section-head h2{color:white;font-size:clamp(18px,2vw,27px)}
+.cinema-below .section-head h2:before{content:"";display:inline-block;width:5px;height:22px;background:#f0163b;margin-right:10px;vertical-align:-3px;border-radius:3px}
+.cinema-below .poster-card,.cinema-below .poster-img{border-radius:13px}
+.cinema-below .poster-card:hover{box-shadow:0 0 18px #bb153a88}
+.cinema-channel-grid{display:flex;gap:12px;overflow-x:auto;padding:5px 2px 13px;scroll-snap-type:x proximity}
+.cinema-channel{width:180px;min-width:150px;max-width:190px;flex:0 0 16%;border-radius:13px;border:1px solid #8c3f4d;background:linear-gradient(145deg,#211323,#0b1326);color:#fff;padding:0;overflow:hidden;text-align:left;scroll-snap-align:start}
+.cinema-channel .channel-image{display:block;height:100px;overflow:hidden}
+.cinema-channel .official-art,.cinema-channel .faux-art,.cinema-channel img{width:100%;height:100%;object-fit:cover}
+.cinema-channel .channel-caption{display:block;padding:8px 10px;font-weight:780;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cinema-channel:hover{border-color:#ff3754;box-shadow:0 0 17px #f20b3055}
+@media(max-width:1050px){.cinema-spotlight{grid-template-columns:minmax(0,1.45fr) minmax(245px,1fr)}.cinema-menu-grid{grid-template-columns:repeat(3,1fr)}.cinema-cat{min-height:119px}.cinema-featured,.cinema-preview{min-height:280px}}
+@media(max-width:740px){.workarea{padding:0 7px}.topbar{height:auto;min-height:61px;gap:7px;padding:7px 10px;border-radius:0 0 15px 15px}.cinema-logo{font-size:20px}.cinema-nav{justify-content:flex-start}.cinema-tab{min-height:37px;padding:7px 9px;font-size:12px}.cinema-icon{height:35px;width:35px;font-size:17px}.mobile-bottom-nav{display:none!important}main{padding:10px 4px 35px}.cinema-spotlight{grid-template-columns:1fr}.cinema-featured{min-height:255px}.cinema-preview{min-height:240px}.cinema-preview-stage{min-height:170px}.cinema-start{padding:9px;border-radius:16px}.cinema-feature-text{padding:24px}.cinema-feature-text h1{font-size:34px}.cinema-feature-text p{font-size:13px}.cinema-menu-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.cinema-cat{min-height:105px;padding:13px 11px}.cinema-cat-icon{font-size:30px}.cinema-cat strong{font-size:15px}.cinema-countries{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.cinema-country{min-height:68px;padding:9px 10px}.cinema-country .flag{font-size:23px}.cinema-channel{flex:0 0 44%}.cinema-below{margin:15px 2px}}
+@media(max-width:430px){.cinema-logo{font-size:17px}.cinema-logo span{display:none}.cinema-tab{font-size:11px;padding:7px 8px}.cinema-icon{width:32px;height:32px}.cinema-featured{min-height:230px}.cinema-feature-text h1{font-size:29px}.cinema-feature-text{padding:20px}.cinema-kicker{letter-spacing:2px;font-size:9px}.cinema-preview{min-height:224px}.cinema-country span:last-child{font-size:13px}}
+</style>
 </head>
 <body>
 <div class="app-shell" id="app-shell">
@@ -278,13 +365,16 @@ footer{border-top-color:#ffffff11;color:#8591a5}
  <button type="button" class="mobile-menu-backdrop" data-action="close-menu" aria-label="Cerrar menú"></button>
  <div class="workarea">
    <header class="topbar">
-      <button class="mobile-menu icon-button" data-action="toggle-menu" aria-label="Mostrar menú">☰</button>
-      <span class="bread" id="breadcrumb">NÉVIX TV <span>/</span> Inicio</span>
-      <div class="top-actions">
-         <button class="icon-button" data-action="go-search" title="Buscar" aria-label="Buscar">⌕</button>
-         <button class="avatar" data-action="nav" data-view="admin" title="Panel privado" aria-label="Panel privado">N</button>
-      </div>
-   </header>
+ <a href="#inicio" class="cinema-logo" aria-label="NÉVIX TV - Inicio"><span aria-hidden="true">▶</span><b>NÉVIX</b><strong>TV</strong></a>
+ <nav class="cinema-nav" aria-label="Secciones principales">
+ <button class="cinema-tab active" data-action="nav" data-view="inicio">Inicio</button>
+ <button class="cinema-tab" data-action="nav" data-view="live">◎ TV en vivo</button>
+ <button class="cinema-tab" data-action="nav" data-view="movie">▤ Películas</button>
+ <button class="cinema-tab" data-action="nav" data-view="series">▦ Series</button>
+ <button class="cinema-tab" data-action="nav" data-view="favorites">♡ Favoritos</button>
+ </nav>
+ <div class="cinema-actions"><button class="cinema-icon" data-action="go-search" aria-label="Buscar" title="Buscar">⌕</button><button class="cinema-icon" data-action="nav" data-view="admin" aria-label="Panel privado" title="Panel privado">♙</button></div>
+ </header>
    <main id="main" tabindex="-1"><div class="loading">Cargando NÉVIX TV…</div></main>
    <footer>© NÉVIX TV · Tu espacio personal de entretenimiento</footer>
  </div>
@@ -1573,25 +1663,79 @@ function rail(title,items,route){if(!items.length)return '';return `<section cla
 function empty(label,addButton=true){return `<div class="empty-state"><div class="empty-icon">◈</div><h3>${esc(label)}</h3><p>Agrega enlaces de tu propia biblioteca o fuentes de streaming autorizadas desde el panel privado.</p>${addButton?'<button class="btn btn-primary" data-action="nav" data-view="admin">⚙ Abrir panel privado</button>':''}</div>`;}
 function navHTML(){return Object.entries(NAMES).map(([key,name])=>`<button class="nav-button ${state.view===key?'active':''}" data-action="nav" data-view="${key}" aria-current="${state.view===key?'page':'false'}"><span class="nav-icon">${ICONS[key]}</span><span>${name}</span></button>`).join('');}
 function mobileNavHTML(){const tabs=[['inicio','Inicio','⌂'],['live','TV','▣'],['movie','Películas','▤'],['series','Series','▦'],['favorites','Mi lista','♡']];return tabs.map(([key,label,icon])=>`<button class="bottom-tab ${state.view===key?'active':''}" data-action="nav" data-view="${key}" aria-label="${label}" aria-current="${state.view===key?'page':'false'}"><span class="bottom-icon" aria-hidden="true">${icon}</span><span>${label}</span></button>`).join('');}
+function homePreviewSource(){
+ const playable=allItems().filter(it=>it.kind==='live'&&it.browserPlayable===true&&!isRemovedVeChannel(it)&&typeof it.url==='string'&&/^https:\/\//i.test(it.url));
+ const approved=[...LATAM_OFFICIAL_EMBEDS,...OFFICIAL_EMBEDS].filter(it=>it.embedType==='youtube'&&/^[\w-]{11}$/.test(it.videoId||''));
+ return [...playable,...approved].find(it=>it.id===homePreviewId)||playable[0]||approved[0]||null;
+}
+let homePreviewId=null,homePreviewActive=false,homePreviewHls=null;
+function stopHomePreview(){
+ if(homePreviewHls){try{homePreviewHls.destroy();}catch(_){ }homePreviewHls=null;}
+ const video=document.getElementById('home-mini-video');
+ if(video){try{video.pause();video.removeAttribute('src');video.load();}catch(_){}}
+ const box=document.getElementById('home-preview-player');if(box)box.innerHTML='';
+}
+function homePreviewFailure(message){
+ const box=document.getElementById('home-preview-player');
+ if(box)box.innerHTML='<div class="cinema-preview-error">'+esc(message||'Este canal no está disponible en la vista previa.')+'</div>';
+}
+function mountHomePreview(){
+ if(!homePreviewActive||state.view!=='inicio')return;
+ const item=homePreviewSource(),box=document.getElementById('home-preview-player');
+ if(!item||!box)return;
+ if(item.embedType==='youtube'&&/^[A-Za-z0-9_-]{11}$/.test(item.videoId||'')){
+  const origin=location.protocol==='https:'?'&origin='+encodeURIComponent(location.origin):'';
+  const src='https://www.youtube.com/embed/'+encodeURIComponent(item.videoId)+'?autoplay=1&mute=1&playsinline=1&rel=0'+origin;
+  box.innerHTML='<iframe class="cinema-preview-iframe" title="Vista previa de '+esc(item.short||item.title)+'" src="'+esc(src)+'" loading="eager" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+  return;
+ }
+ if(!/^https:\/\//i.test(String(item.url||''))||!item.browserPlayable){homePreviewFailure('Este canal aún no tiene una señal compatible.');return;}
+ box.innerHTML='<video id="home-mini-video" class="cinema-preview-video" controls muted autoplay playsinline preload="auto"></video>';
+ const video=document.getElementById('home-mini-video');
+ if(!video)return;
+ video.addEventListener('error',()=>homePreviewFailure('No se puede reproducir este canal en la vista previa.'),{once:true});
+ const isHLS=/\.m3u8(?:[?#]|$)/i.test(item.url);
+ if(isHLS&&window.Hls?.isSupported?.()){
+  try{
+   const hls=new window.Hls({enableWorker:true,lowLatencyMode:false});
+   homePreviewHls=hls;
+   hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{if(homePreviewHls===hls)video.play().catch(()=>{});});
+   hls.on(window.Hls.Events.ERROR,(_,data)=>{if(data?.fatal&&homePreviewHls===hls){stopHomePreview();homePreviewFailure('La señal no está disponible en la vista previa.');}});
+   hls.loadSource(item.url);hls.attachMedia(video);
+  }catch(_){homePreviewFailure('El canal no se puede mostrar aquí.');}
+ }else if(!isHLS||video.canPlayType('application/vnd.apple.mpegurl')){
+  video.src=item.url;video.play().catch(()=>{});
+ }else homePreviewFailure('Tu navegador no admite la vista previa de este canal.');
+}
 function renderHome(){
- const items=allItems();
- const movies=movieCatalogItems();
- const series=seriesOnce([...seriesCatalogItems(),...items.filter(it=>it.kind==='series'&&!it.watchmode)]);
- const live=items.filter(it=>it.kind==='live'&&it.verifiedManifest);
+ const items=allItems(),movies=movieCatalogItems(),series=seriesOnce([...seriesCatalogItems(),...items.filter(it=>it.kind==='series'&&!it.watchmode)]);
+ const live=items.filter(it=>it.kind==='live'&&it.browserPlayable===true&&!isRemovedVeChannel(it));
  const continued=items.filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
  const fav=items.filter(it=>state.favorites.includes(it.id));
- const covers=[...movies,...seriesCatalogItems()].slice(0,3);
- const coverMarkup=covers.map(it=>'<div class="hero-cover">'+artwork(it)+'</div>').join('');
- const quick=[['movie','▤','Películas','Estrenos y populares'],['series','▦','Series','Descubre qué ver'],['live','▣','TV en vivo','Canales por país'],['favorites','♡','Mi lista','Tus favoritos']];
- const quickMarkup=quick.map(([view,icon,name,sub])=>'<button class="quick-card" data-action="nav" data-view="'+view+'"><span class="quick-icon" aria-hidden="true">'+icon+'</span><span class="quick-copy"><strong>'+name+'</strong><small>'+sub+'</small></span></button>').join('');
- return '<section class="hero" aria-label="Bienvenido a NÉVIX TV"><div class="hero-bg"></div><div class="hero-body"><span class="kicker">✦ TU ENTRETENIMIENTO EN UN SOLO LUGAR</span><h1><span class="gradient-text">Tu próxima</span><br>gran historia.</h1><p>Películas, series y televisión en vivo en una experiencia sencilla, visual y hecha para disfrutar.</p><div class="hero-actions"><button class="btn btn-primary" data-action="nav" data-view="movie">▶ Explorar películas</button><button class="btn" data-action="nav" data-view="live">▣ Ver TV en vivo</button></div></div><div class="hero-visual" aria-hidden="true">'+coverMarkup+'</div></section>'
- +'<div class="quick-grid" aria-label="Accesos rápidos">'+quickMarkup+'</div>'
- +rail('Películas para descubrir',movies.slice(0,18),'movie')
- +rail('Series para ver',series.slice(0,18),'series')
- +rail('TV en vivo',live.slice(0,18),'live')
+ const featured=movies.find(it=>it.image)||series.find(it=>it.image)||movies[0]||series[0]||null;
+ const preview=homePreviewSource();
+ const action=featured?'data-action="play" data-id="'+esc(featured.id)+'"':'data-action="nav" data-view="movie"';
+ const heroTitle=featured?esc(displayTitle(featured)):'Todo tu entretenimiento';
+ const heroDesc=featured?esc(featured.description||'Explora esta historia y descubre dónde verla en su plataforma oficial.'):'Descubre películas, series, televisión en vivo y tus canales favoritos en un solo lugar.';
+ const categories=[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['movie','♛','Ranking'],['movie','✧','Últimos estrenos'],['favorites','♡','Favoritos']];
+ const categoryTiles=categories.map(([view,icon,title])=>'<button class="cinema-cat" data-action="nav" data-view="'+view+'"><span class="cinema-cat-icon" aria-hidden="true">'+icon+'</span><strong>'+title+'</strong></button>').join('');
+ const countries=['ve','us','co','ar','pt'].map(code=>COUNTRIES.find(c=>c[0]===code)).filter(Boolean).map(c=>'<button class="cinema-country" data-action="home-country" data-code="'+c[0]+'"><span class="flag" aria-hidden="true">'+c[1]+'</span><span>'+esc(c[2])+'</span></button>').join('');
+ const liveCards=live.slice(0,18).map(it=>'<button class="cinema-channel" data-action="home-preview" data-id="'+esc(it.id)+'" aria-label="Vista previa de '+esc(it.title)+'"><span class="channel-image">'+artwork(it)+'</span><span class="channel-caption">'+esc(it.short||it.title)+'</span></button>').join('');
+ return '<div class="cinema-start">'
+ +'<div class="cinema-spotlight"><section class="cinema-featured" aria-label="Contenido destacado"><div class="cinema-art">'+(featured?artwork(featured):'<div class="faux-art tone-2"></div>')+'</div><div class="cinema-feature-text"><span class="cinema-kicker">✦ CONTENIDO DESTACADO</span><h1>'+heroTitle+'</h1><p>'+heroDesc+'</p><div class="cinema-buttons"><button class="btn cinema-red-btn" '+action+'>▶ '+(featured?'Ver ahora':'Explorar películas')+'</button><button class="btn cinema-outline-btn" '+(featured?'data-action="detail" data-id="'+esc(featured.id)+'"':'data-action="nav" data-view="series"')+'>ⓘ '+(featured?'Más información':'Ver series')+'</button></div></div></section>'
+ +'<section class="cinema-preview" id="home-live-preview" aria-label="Vista previa de TV"><div class="cinema-preview-bar"><span><span class="cinema-preview-mark">● TV</span> &nbsp; Vista previa</span><div class="cinema-preview-tools"><button data-action="home-expand" aria-label="Ampliar vista previa" title="Pantalla completa">⛶</button></div></div><div class="cinema-preview-stage">'+(homePreviewActive?'<div id="home-preview-player" style="position:absolute;inset:0;display:flex;width:100%;height:100%"></div>':'<div class="cinema-preview-poster">'+(preview?artwork(preview):'<div class="faux-art tone-3"></div>')+'</div><button class="cinema-preview-play" data-action="home-preview" data-id="'+esc(preview?.id||'')+'" aria-label="Iniciar vista previa" '+(preview?'':'disabled')+'>▶</button>')+'</div><div class="cinema-preview-foot"><span>'+esc(preview?.short||preview?.title||'Selecciona un canal para ver la señal')+'</span><button data-action="nav" data-view="live">Ver TV ›</button></div></section></div>'
+ +'<div class="cinema-menu-grid" aria-label="Menú de entretenimiento">'+categoryTiles+'</div>'
+ +'<div class="cinema-country-head">Acceso por país</div><div class="cinema-countries">'+countries+'</div>'
+ +'</div>'
+ +'<div class="cinema-below">'
+ +(liveCards?'<section class="catalog-rail"><div class="section-head"><h2>Canales en vivo</h2><button class="link-button" data-action="nav" data-view="live">Ver todos ›</button></div><div class="cinema-channel-grid">'+liveCards+'</div></section>':'')
+ +rail('Últimos estrenos',movies.filter(it=>it.section==='recent').slice(0,16),'movie')
+ +rail('Ranking · Más populares',movies.filter(it=>it.section==='popular').slice(0,16),'movie')
+ +rail('Películas destacadas',movies.slice(0,16),'movie')
+ +rail('Series recomendadas',series.slice(0,16),'series')
  +rail('Continuar viendo',continued,'favorites')
  +rail('Mi lista',fav,'favorites')
- +'<p class="hint" style="margin-top:35px">NÉVIX reúne películas y series de plataformas de suscripción, además de canales de TV gratuitos. Las películas y series externas se abren en sus servicios oficiales y requieren una cuenta cuando corresponda.</p>';
+ +'<p class="hint">Las películas y series se abren en sus proveedores oficiales; algunas requieren una suscripción. Las señales de TV dependen de la disponibilidad y permisos de cada emisor.</p></div>';
 }
 
 function filterChips(items){const cats=['Todos',...new Set(items.map(it=>it.category||'General'))];return `<div class="filterbar">${cats.map(cat=>`<button class="chip ${cat===state.category?'on':''}" data-action="filter" data-category="${esc(cat)}">${esc(cat)}</button>`).join('')}</div>`;}
@@ -1761,8 +1905,8 @@ function renderAdmin(){if(state.pinHash&&!state.unlocked)return renderAdminLocke
  <div class="panel-card"><h2>Respaldo y privacidad</h2><p>Exporta o restaura tus fuentes, favoritos y progreso mediante un archivo JSON. No incluye los videos, solo sus enlaces.</p><div class="actions"><button class="btn btn-sm" data-action="export-json">↓ Exportar</button><label class="btn btn-sm" for="json-file">↑ Importar</label><input class="sr-only" type="file" id="json-file" accept=".json,application/json" /></div><hr style="border:0;border-top:1px solid #2e3857;margin:22px 0"><h2>Protección local</h2><p>${state.pinHash?'PIN configurado. Puedes cambiarlo o quitarlo.':'Puedes crear un PIN para restringir el acceso a este panel en este dispositivo.'}</p><div class="actions"><button class="btn btn-sm" data-action="set-pin">${state.pinHash?'Cambiar PIN':'Crear PIN'}</button>${state.pinHash?'<button class="btn btn-sm" data-action="remove-pin">Quitar PIN</button><button class="btn btn-sm" data-action="lock">Bloquear</button>':''}</div><p class="hint">Si borras los datos del navegador se pierde el PIN y el catálogo local.</p></div><div class="panel-card"><h2>Datos de demostración</h2><p>Puedes restaurar el catálogo de muestra; se reemplazará tu catálogo actual.</p><button class="btn btn-danger btn-sm" data-action="reset">Restablecer NÉVIX TV</button></div></div></div>`;
 }
 function render({focusSearch=false}={}){els.nav.innerHTML=navHTML();const bottom=$('#mobile-bottom-nav');if(bottom)bottom.innerHTML=mobileNavHTML();els.crumb.innerHTML=`NÉVIX TV <span>/</span> ${esc(NAMES[state.view])}`;
- const content={inicio:renderHome,live:renderLive,movie:()=>renderCatalog('movie'),series:()=>renderCatalog('series'),favorites:renderFavorites,search:renderSearch,admin:renderAdmin}[state.view];els.main.innerHTML=content?content():renderHome();if(focusSearch)$('#global-search')?.focus();}
-function go(view){if(view==='netflix'||view==='free')view='movie';if(!NAMES[view])view='inicio';state.view=view;state.category='Todos';state.search='';$('#sidebar').classList.remove('open');location.hash=view;render({focusSearch:view==='search'});if(view==='live')loadCountry('ve');if(view==='movie'&&!state.movieAttempted)loadWatchmodeCatalog();if(view==='series'&&!state.seriesAttempted)loadWatchmodeSeries();window.scrollTo({top:0,behavior:'instant'});}
+ const content={inicio:renderHome,live:renderLive,movie:()=>renderCatalog('movie'),series:()=>renderCatalog('series'),favorites:renderFavorites,search:renderSearch,admin:renderAdmin}[state.view];stopHomePreview();els.main.innerHTML=content?content():renderHome();document.querySelectorAll('.cinema-tab').forEach(btn=>{const active=btn.dataset.view===state.view;btn.classList.toggle('active',active);btn.setAttribute('aria-current',active?'page':'false');});if(state.view==='inicio'&&homePreviewActive)mountHomePreview();if(focusSearch)$('#global-search')?.focus();}
+function go(view){if(view!=='inicio'){homePreviewActive=false;stopHomePreview();}if(view==='netflix'||view==='free')view='movie';if(!NAMES[view])view='inicio';state.view=view;state.category='Todos';state.search='';$('#sidebar').classList.remove('open');location.hash=view;render({focusSearch:view==='search'});if(view==='live')loadCountry('ve');if(view==='movie'&&!state.movieAttempted)loadWatchmodeCatalog();if(view==='series'&&!state.seriesAttempted)loadWatchmodeSeries();window.scrollTo({top:0,behavior:'instant'});}
 function openDetail(id){const it=itemById(id);if(!it)return toast('No encontramos este contenido.');state.selected=it.id;const relevant=it.kind==='series'&&!it.watchmode?allItems().filter(x=>x.kind==='series'&&(x.seriesName||x.title)===(it.seriesName||it.title)).sort((a,b)=>(a.season-b.season)||(a.episode-b.episode)):[];
  els.modal.innerHTML=`<div class="detail-modal-root" role="presentation"><div class="detail-modal" role="dialog" aria-modal="true" aria-label="${esc(displayTitle(it))}"><button class="close-x" data-action="close-detail" aria-label="Cerrar">×</button><div class="detail-art">${artwork(it)}</div><div class="detail-body"><span class="eyebrow">${it.kind==='live'?'TELEVISIÓN':it.kind==='series'?'SERIE':'PELÍCULA / VIDEO'} ${it.sample?'· DEMOSTRACIÓN':''}</span><h1>${esc(displayTitle(it))}</h1><p class="text-muted">${esc(it.category)} ${it.year?'· '+esc(it.year):''} ${it.kind==='series'?`· ${relevant.length} episodio(s)`:''}</p><p>${esc(it.description||'Contenido agregado a tu biblioteca.')}</p><div class="actions">${it.official?`<a class="btn btn-primary" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">↗ Reproductor oficial</a>`:`<button class="btn btn-primary" data-action="play" data-id="${esc(it.id)}">▶ ${state.progress[it.id]?.time>1?'Continuar':'Reproducir'}</button>`}<button class="btn" data-action="favorite" data-id="${esc(it.id)}">${state.favorites.includes(it.id)?'♥ En mi lista':'♡ Añadir a mi lista'}</button></div>${relevant.length?`<div class="section-head"><h2>Episodios</h2></div><div class="episode-list">${relevant.map(ep=>`<button class="episode-item" data-action="play" data-id="${esc(ep.id)}"><span>▶ <b>T${ep.season||1} · E${ep.episode||1}</b> — ${esc(ep.title)}</span><small>Ver episodio</small></button>`).join('')}</div>`:''}<p class="hint" style="margin-top:22px">Fuente: ${esc(it.source)}${it.sample?' · Clip original de prueba':''}</p></div></div></div>`;
  els.modal.querySelector('.close-x')?.focus();}
@@ -2057,7 +2201,7 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel?.requestFullscreen)activePanel.requestFullscreen().catch(()=>toast('No se puede ampliar esta vista previa.'));else if(activePanel?.webkitRequestFullscreen)activePanel.webkitRequestFullscreen();break;}case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
@@ -2065,7 +2209,7 @@ document.addEventListener('input',e=>{if(e.target.id==='live-search'){const pos=
 document.addEventListener('keydown',e=>{if(e.key==='Escape'||e.key==='Backspace'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){if(els.player.innerHTML){const s=document.querySelector('#player-root .player-shell');if(s&&(s.classList.contains('nevix-expanded')||document.fullscreenElement===s||document.webkitFullscreenElement===s)){e.preventDefault();exitPlayerFullscreen();return;}closePlayer();return;}if(els.modal.innerHTML){closeDetail();return;}$('#sidebar').classList.remove('open');}if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key) && !['INPUT','TEXTAREA','SELECT','VIDEO'].includes(document.activeElement?.tagName)&&!els.player.innerHTML){const focusables=[...document.querySelectorAll('button:not(:disabled),a[href]')].filter(el=>el.getBoundingClientRect().width>0);if(focusables.length){let i=focusables.indexOf(document.activeElement);if(i<0)return;let step=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;let next=focusables[(i+step+focusables.length)%focusables.length];if(next){e.preventDefault();next.focus({preventScroll:false});}}}});
 window.addEventListener('hashchange',()=>{const requested=location.hash.slice(1);if(requested==='netflix'||requested==='free'){go('movie');return;}if(NAMES[requested]&&requested!==state.view){state.view=requested;state.category='Todos';state.search='';render();if(requested==='movie'&&!state.movieAttempted)void loadWatchmodeCatalog();if(requested==='series'&&!state.seriesAttempted)void loadWatchmodeSeries();}});
 // No se registra un service worker: evita recibir versiones antiguas de la interfaz.
-if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();if(state.view==='movie')void loadWatchmodeCatalog();if(state.view==='series')void loadWatchmodeSeries();
+if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();if(state.view==='movie')void loadWatchmodeCatalog();if(state.view==='series')void loadWatchmodeSeries();if(state.view==='inicio'){void loadWatchmodeCatalog();void loadWatchmodeSeries();}
 
 
 </script>
