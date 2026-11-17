@@ -117,11 +117,15 @@ server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='
 
 async function checkCatalogHealth(){
  if(!KEY)return;
- try{
-  const result=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:'movie',regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1})));
-  result.forEach((x,i)=>{const region=['US','CO'][i];const count=x.status==='fulfilled'?(Array.isArray(x.value?.titles)?x.value.titles.length:0):-1;console.log('Watchmode health check: region='+region+' status='+(x.status==='fulfilled'?'ok':'error')+' titles='+count+' reason='+(x.status==='rejected'?String(x.reason.error||x.reason.name||'unknown'):'none'));});
- }catch(e){
-  console.error('Watchmode health check: error='+String(e.error||e.name||'unknown')+'; status='+String(e.status||0));
+ // Two small validations per media type, one country per Watchmode request.
+ for(const [kind,type] of [['movie','movie'],['series','tv_series']]){
+  const results=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:type,regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1})));
+  results.forEach((x,i)=>{
+   const country=['US','CO'][i];
+   const titles=x.status==='fulfilled'&&Array.isArray(x.value?.titles)?x.value.titles.length:0;
+   const reason=x.status==='rejected'?String(x.reason?.error||x.reason?.name||'unknown'):'none';
+   console.log('Watchmode health check: type='+kind+' region='+country+' status='+(x.status==='fulfilled'?'ok':'error')+' titles='+titles+' reason='+reason);
+  });
  }
 }
 void checkCatalogHealth();
