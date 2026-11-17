@@ -10,19 +10,46 @@ const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application
 const get=(k)=>{const e=memo.get(k);if(e&&e.until>Date.now())return e.value;memo.delete(k);return undefined;};
 function save(k,val,ttl=86400000){if(memo.size>500){for(const key of memo.keys()){memo.delete(key);if(memo.size<350)break;}}memo.set(k,{value:val,until:Date.now()+ttl});return val;}
 async function single(k,fn){const hit=get(k);if(hit!==undefined)return hit;if(pending.has(k))return pending.get(k);const task=Promise.resolve().then(fn).then(val=>save(k,val,k.startsWith('details:')?3*86400000:12*3600000)).finally(()=>pending.delete(k));pending.set(k,task);return task;}
+// Watchmode may return HTTP 429 when list-titles requests overlap on free keys.
+// Serialize outbound requests and space them apart; do not expose the key.
+let providerQueue=Promise.resolve(),lastProviderStart=0;
+function serializedProviderRequest(fn){
+ const work=providerQueue.then(async()=>{
+  const delay=Math.max(0,1300-(Date.now()-lastProviderStart));
+  if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+  lastProviderStart=Date.now();
+  return fn();
+ });
+ providerQueue=work.then(()=>undefined,()=>undefined);
+ return work;
+}
 async function query(path,params={}){
- const today=new Date().toISOString().slice(0,10);if(today!==date){date=today;spent=0;}
- if(!KEY)throw {status:503,error:'missing_key',message:'Falta configurar WATCHMODE_API_KEY en Render'};
- if(spent+inflight>=CAP)throw {status:429,error:'daily_budget',message:'Límite preventivo de consultas alcanzado. El catálogo guardado seguirá disponible.'};
- const url=new URL('https://api.watchmode.com/v1'+path+'/');
- for(const [key,val] of Object.entries(params))url.searchParams.set(key,String(val));
- inflight++;
- try{
-  const r=await fetch(url,{headers:{'X-API-Key':KEY,'Accept':'application/json'},signal:AbortSignal.timeout(12000)});
-  spent++;
-  if(!r.ok){const error=r.status===401||r.status===403?'invalid_key':r.status===429?'provider_quota':'watchmode_error';const safeMessage=String(await r.text()).slice(0,240).replaceAll(KEY,'[hidden]');console.error('Watchmode provider response HTTP='+r.status+' endpoint='+path+' details='+safeMessage);throw {status:r.status===429?429:502,error,message:'Watchmode no pudo completar la consulta (HTTP '+r.status+')'};}
-  return r.json();
- }finally{inflight--;}
+ return serializedProviderRequest(async()=>{
+  const today=new Date().toISOString().slice(0,10);if(today!==date){date=today;spent=0;}
+  if(!KEY)throw {status:503,error:'missing_key',message:'Falta configurar WATCHMODE_API_KEY en Render'};
+  if(spent>=CAP)throw {status:429,error:'daily_budget',message:'Límite preventivo de consultas alcanzado. El catálogo guardado seguirá disponible.'};
+  const url=new URL('https://api.watchmode.com/v1'+path+'/');
+  for(const [key,val] of Object.entries(params))url.searchParams.set(key,String(val));
+  inflight++;
+  try{
+   for(let attempt=0;attempt<3;attempt++){
+    if(spent>=CAP)throw {status:429,error:'daily_budget',message:'Límite preventivo de consultas alcanzado.'};
+    const response=await fetch(url,{headers:{'X-API-Key':KEY,'Accept':'application/json'},signal:AbortSignal.timeout(12000)});
+    spent++;
+    if(response.status===429&&attempt<2){
+     await new Promise(resolve=>setTimeout(resolve,(attempt+1)*2200));
+     continue;
+    }
+    if(!response.ok){
+     const error=response.status===401||response.status===403?'invalid_key':response.status===429?'provider_quota':'watchmode_error';
+     const safe=String(await response.text()).slice(0,240).replaceAll(KEY,'[hidden]');
+     console.error('Watchmode provider response HTTP='+response.status+' endpoint='+path+' details='+safe);
+     throw {status:response.status===429?429:502,error,message:'Watchmode no pudo completar la consulta (HTTP '+response.status+')'};
+    }
+    return response.json();
+   }
+  }finally{inflight--;}
+ });
 }
 
 async function tmdbTitle(id,kind){
