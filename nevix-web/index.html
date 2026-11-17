@@ -77,7 +77,7 @@
    <div class="sidebar-section">EXPLORAR</div>
    <nav class="nav" id="nav"></nav>
    <div class="sidebar-bottom">
-     <div class="demo-chip"><i class="pulse-dot"></i> VERSIÓN 2.4 · PERSONAL</div>
+     <div class="demo-chip"><i class="pulse-dot"></i> VERSIÓN 2.5 · PERSONAL</div>
      <p>Tu contenido, a tu manera.</p>
    </div>
  </aside>
@@ -91,7 +91,7 @@
       </div>
    </header>
    <main id="main" tabindex="-1"><div class="loading">Cargando NÉVIX TV…</div></main>
-   <footer>© NÉVIX TV · V2.4 personal · Solo fuentes y contenidos autorizados</footer>
+   <footer>© NÉVIX TV · V2.5 personal · Solo fuentes y contenidos autorizados</footer>
  </div>
 </div>
 <div id="modal-root"></div>
@@ -1319,6 +1319,31 @@ const VE_PUBLIC_HLS_CANDIDATES=[
  {name:'Meridiano TV',url:'https://e1.viginet.vectormax.com:5210/quickstart/114-934-21/index.m3u8'},
  {name:'Globovisión',url:'https://vcp5.myplaytv.com/globovision/globovision/playlist.m3u8'}
 ];
+// Las cuatro tarjetas son visibles aun si ningún HLS pasa la prueba.
+// La visibilidad no se confunde con reproducción garantizada.
+const VE_FEATURED_CHANNELS=[
+ {key:'televen',name:'Televen',website:'https://app.televen.com/'},
+ {key:'venevision',name:'Venevisión',website:'https://venevisionplay.com/'},
+ {key:'meridiano',name:'Meridiano TV',website:'https://meridiano.net/meridianotv'},
+ {key:'globovision',name:'Globovisión',website:'https://www.globovision.com/'}
+];
+function venezuelaFeaturedCards(){
+ return VE_FEATURED_CHANNELS.map(e=>{
+  const ok=state.worldChannels.find(x=>x.countryCode==='ve'&&x.browserPlayable===true&&
+   String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es'))&&
+   !state.failedStreams.includes(x.id));
+  const candidate=VE_PUBLIC_HLS_CANDIDATES.find(x=>x.name===e.name);
+  return {
+   id:'featured-ve-'+e.key,title:e.name,short:e.name,kind:'live',
+   category:'🇻🇪 Venezuela',flag:'🇻🇪',genre:e.name==='Meridiano TV'?'Deportes':'Televisión',
+   url:ok?.url||candidate?.url||e.website,website:e.website,source:ok?.source||'Señal pública por comprobar',
+   description:ok?'La reproducción de imagen fue comprobada recientemente desde este navegador. La disponibilidad y el permiso de integración pueden cambiar.':'Canal gratuito con presencia oficial. La fuente HLS pública está pendiente de comprobar. Puedes tocar para probarla dentro de NÉVIX; si falla, usa el acceso al emisor.',
+   direct:true,unverified:!ok,verifiedManifest:Boolean(ok),browserPlayable:Boolean(ok),
+   featuredVenezuela:true
+  };
+ });
+}
+
 function veExperimentalCandidates(country){
  if(country?.[0]!=='ve')return [];
  return VE_PUBLIC_HLS_CANDIDATES.map((x,i)=>({
@@ -1384,7 +1409,7 @@ const state={
 };
 const REPLACED_OFFICIAL_IDS=new Set(['official-us-abc','official-us-cbs','official-de-dw','official-fr-france24']);
 function directoryOnly(){return OFFICIAL_SOURCES.filter(it=>!REPLACED_OFFICIAL_IDS.has(it.id));}
-function allItems(){return [...OPEN_MOVIES,...OPEN_SERIES,...state.worldChannels.filter(x=>x.browserPlayable===true&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)),...state.items.filter(x=>x.kind!=='live'),...state.sessionItems.filter(x=>x.kind!=='live')];}
+function allItems(){return [...venezuelaFeaturedCards(),...OPEN_MOVIES,...OPEN_SERIES,...state.worldChannels.filter(x=>x.browserPlayable===true&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'),...state.sessionItems.filter(x=>x.kind!=='live')];}
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
 function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:1,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
@@ -1396,7 +1421,7 @@ function artwork(it){if(it?.official||it?.direct||it?.embedType==='youtube')retu
 }
 function displayTitle(it){return it.kind==='series'?(it.seriesName||it.title):it.title;}
 function card(it,portrait=false){let fav=state.favorites.includes(it.id);const progress=state.progress[it.id];const unchecked=Boolean(!it.browserPlayable&&(it.unverified||(it.embedType==="youtube"&&!it.verifiedPlayback)));return `<button class="poster-card" data-action="play" data-id="${esc(it.id)}" aria-label="Reproducir ${esc(displayTitle(it))}">
- <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ VIDEO PROBADO':unchecked?'SEÑAL SIN VERIFICAR':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
+ <span class="poster-img">${artwork(it)}${it.openLicense?'<span class="playmark">▶ GRATIS</span>':it.sample?'<span class="playmark">DEMO</span>':it.kind==='live'?`<span class="playmark">${it.browserPlayable?'▶ VIDEO PROBADO':it.featuredVenezuela?'▶ TOCA PARA PROBAR':unchecked?'SEÑAL SIN VERIFICAR':'▶ EN VIVO'}</span>`:''}${fav?'<span class="favorite-mark">♥</span>':''}</span>
  <span class="poster-meta"><span style="min-width:0"><span class="poster-title">${esc(displayTitle(it))}</span><span class="poster-sub">${esc(it.category||'General')}${it.kind==='series'?' · Serie':''}${progress?.time>1?' · En progreso':''}</span></span></span></button>`;}
 function seriesOnce(items){const seen=new Set();return items.filter(it=>{let k=it.seriesName||it.title;if(seen.has(k))return false;seen.add(k);return true;});}
 function rail(title,items,route){if(!items.length)return '';return `<div class="section-head"><h2>${esc(title)}</h2><button class="link-button" data-action="nav" data-view="${route}">Ver todo ›</button></div><div class="horizontal-grid">${items.map(it=>card(it)).join('')}</div>`;}
@@ -1412,24 +1437,26 @@ function renderCatalog(kind){let title=kind==='movie'?'Películas':'Series';let 
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
- const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>it.browserPlayable===true);
+ const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>it.browserPlayable===true&&!it.featuredVenezuela);
+ const featured=chosen?.[0]==='ve'?chooseItems(venezuelaFeaturedCards(),{category:state.category,q:state.liveQuery}):[];
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
  const selectedName=chosen?' · '+chosen[1]+' '+chosen[2]:'';
- return pageTitle('TV en vivo',available.length+' señales gratuitas accesibles desde tu navegador'+selectedName)
+ return pageTitle('TV en vivo',(available.length+featured.filter(it=>it.browserPlayable).length)+' señales con video comprobado'+selectedName)
  +'<div class="live-control-panel"><div class="live-control-title">📺 TV GRATIS · REPRODUCCIÓN PROBADA</div>'
  +'<p>Un toque intenta iniciar el directo dentro de NÉVIX. El catálogo usa fuentes oficiales y algunas venezolanas comunitarias del directorio Nexonic. También prueba fuentes públicas de Televen, Venevisión y Meridiano TV sin utilizar cuentas de usuarios. Solo aparecen como reproducibles si un video temporal comienza a cargar cuadros reales en tu navegador. Esto no confirma autorización del emisor, sonido, ni reproducción continua. No incluye videos de YouTube con anuncios ni canales de suscripción. Que el manifiesto responda no garantiza imagen y sonido: una señal puede restringirse, caducar o impedir la inserción.</p>'
  +'<div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">'+options+'</select></label>'
  +'<button class="btn btn-primary" data-action="load-country" '+(state.loadingCountry?'disabled':'')+'>'+(state.loadingCountry?'⌛ Reproduciendo muestras de canales…':'↻ Verificar reproducción de canales')+'</button>'
  +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países ya consultados</button></div>'
  +'<div class="live-shortcuts">'+COUNTRIES.slice(0,10).map(c=>'<button class="country-chip '+(state.category===c[1]+' '+c[2]?'on':'')+'" data-action="quick-country" data-code="'+c[0]+'">'+c[1]+' '+esc(c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</button>').join('')+'</div></div>'
+ +(chosen?.[0]==='ve'?'<section style="margin:20px 0 24px"><div class="section-head"><h2>🇻🇪 Canales principales de Venezuela</h2></div><p style="margin:0 0 12px;opacity:.8">Estas cuatro tarjetas siempre aparecen. <b>VIDEO PROBADO</b> significa que se inició imagen en este dispositivo; <b>TOCA PARA PROBAR</b> significa que la señal todavía no está confirmada. Un canal visible no significa que esté disponible o autorizado para redistribución.</p><div class="tile-grid">'+featured.map(it=>card(it,true)).join('')+'</div></section>':'')
  +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' disponibles'+selectedName+'</span></div>'
  +(state.loadingCountry?'<div class="message">⌛ '+esc(state.loadProgress||'Comprobando las señales de este país')+'. Solo aparecen las que iniciaron video en este dispositivo.</div>':'')
  +(shown.length?'<div class="tile-grid">'+shown.map(it=>card(it,true)).join('')+'</div>':
- '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+ (state.loadingCountry?'Verificando canales…':'No hay canales gratuitos comprobados en esta selección')+'</h3><p>Selecciona un país y pulsa «Buscar / actualizar señales del país». Si no hay fuentes oficiales accesibles, no mostraremos enlaces rotos ni canales de pago.</p></div>')
+ '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+ (state.loadingCountry?'Verificando canales…':'Aún no hay otras señales comprobadas')+'</h3><p>Selecciona un país y pulsa «Buscar / actualizar señales del país». Si no hay fuentes oficiales accesibles, no mostraremos enlaces rotos ni canales de pago.</p></div>')
  +(available.length>shown.length?'<button class="btn" data-action="show-more-live">Ver más canales</button>':'')
  +(chosen?.[0]==='ve'?'<section class="live-control-panel" style="margin-top:18px"><div class="live-control-title">🇻🇪 Televen, Venevisión y Meridiano TV</div><p>Estos tres canales ofrecen acceso oficial a sus señales, pero NÉVIX todavía no dispone de un flujo integrado autorizado y comprobado para ellos. No se cuentan como señales directas disponibles. Los botones abren sus plataformas oficiales.</p><div class="live-shortcuts"><a class="btn btn-primary" href="https://app.televen.com/" target="_blank" rel="noopener noreferrer">▶ Ver Televen con mi cuenta gratis ↗</a><a class="btn btn-sm" href="https://registro.televenmax.com.ve/que-ver" target="_blank" rel="noopener noreferrer">📅 Guía de programación ↗</a><a class="btn btn-sm" href="https://venevisionplay.com/" target="_blank" rel="noopener noreferrer">📺 Venevisión Play · Gratis ↗</a><a class="btn btn-sm" href="https://meridiano.net/meridianotv" target="_blank" rel="noopener noreferrer">🏆 Meridiano TV · Señal oficial ↗</a></div><p style="margin-top:10px;font-size:.85rem">Tu plan Gratis de Televen MAX incluye la señal en vivo de Televen para una pantalla. Primero inicia sesión en la versión web oficial si te la solicita; luego elige Televen HD (canal 1). NÉVIX no solicita ni almacena tu contraseña. El enlace de programación puede mostrar canales de planes pagos, que no están incluidos en tu plan gratuito. La señal permanece en el reproductor oficial de Televen MAX: todavía no hay integración interna autorizada.</p></section>':'')
- +'<div class="message">Fuente principal: Nexonic IPTV; candidatas adicionales: listas públicas de Televen, Venevisión y Meridiano TV, sin autorización de integración confirmada. La comprobación desde tu Samsung requiere reproducción real de imagen durante la prueba, pero no acredita autorización de inserción ni estabilidad prolongada. Si falla al reproducirlo, NÉVIX lo retirará del catálogo de este dispositivo.</div>';
+ +'<div class="message">Fuente principal: Nexonic IPTV; candidatas adicionales: listas públicas de Televen, Venevisión y Meridiano TV, sin autorización de integración confirmada. Las tarjetas de Televen, Venevisión, Meridiano y Globovisión permanecen visibles aunque no hayan superado la prueba. La reproducción HLS puede fallar por restricciones del emisor, CORS, ubicación o derechos. Si falla al reproducirlo, NÉVIX lo retirará del catálogo de este dispositivo.</div>';
 }
 function renderFavorites(){let fav=allItems().filter(it=>state.favorites.includes(it.id));let continued=allItems().filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
  return pageTitle('Mi lista','Accede rápidamente a tus favoritos y continúa la reproducción.')+(fav.length?rail('Favoritos',fav,'favorites'):empty('Aún no tienes favoritos',false))+(continued.length?rail('Continuar viendo',continued,'favorites'):'');}
