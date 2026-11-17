@@ -653,7 +653,7 @@ const OPEN_MOVIES=[
   "openLicense": true,
   "short": "Big Buck Bunny",
   "flag": "🎬",
-  "image": ""
+  "image": "https://commons.wikimedia.org/wiki/Special:FilePath/Big_buck_bunny_poster_big.jpg?width=500"
  },
  {
   "id": "open-sintel",
@@ -668,7 +668,7 @@ const OPEN_MOVIES=[
   "openLicense": true,
   "short": "Sintel",
   "flag": "🎬",
-  "image": ""
+  "image": "https://commons.wikimedia.org/wiki/Special:FilePath/Sintel_poster.jpg?width=500"
  },
  {
   "id": "open-tears",
@@ -683,7 +683,7 @@ const OPEN_MOVIES=[
   "openLicense": true,
   "short": "Tears of Steel",
   "flag": "🎬",
-  "image": ""
+  "image": "https://commons.wikimedia.org/wiki/Special:FilePath/Tos-poster.png?width=500"
  },
  {
   "id": "open-cosmos",
@@ -728,7 +728,7 @@ const OPEN_MOVIES=[
   "openLicense": true,
   "short": "Spring",
   "flag": "🎬",
-  "image": ""
+  "image": "https://commons.wikimedia.org/wiki/Special:FilePath/Spring2019PillarPosterBlender.jpg?width=500"
  },
  {
   "id": "open-coffee",
@@ -863,7 +863,7 @@ const OPEN_MOVIES=[
   "openLicense": true,
   "short": "Sita Sings the Blues",
   "flag": "🎬",
-  "image": ""
+  "image": "https://commons.wikimedia.org/wiki/Special:FilePath/Sita_STB_Poster.jpg?width=420"
  }
 ];
 // Selección de títulos con identificadores oficiales de Netflix.
@@ -1777,7 +1777,7 @@ function renderFreeMovies(){
  return pageTitle('Películas gratis','Películas autorizadas que puedes ver directamente en NÉVIX, sin suscripción.')
  +filterChips(movies)
  +'<div class="tile-grid">'+filtered.map(it=>card(it,true)).join('')+'</div>'
- +'<p class="hint">Contenido abierto con atribución, sujeto a disponibilidad del servidor de cada película.</p>';
+ +'<p class="hint">Contenido abierto con atribución, sujeto a disponibilidad del servidor de cada película. Pósteres reutilizables: <a href="https://commons.wikimedia.org/wiki/File:Big_buck_bunny_poster_big.jpg" target="_blank" rel="noopener noreferrer">Big Buck Bunny</a>, <a href="https://commons.wikimedia.org/wiki/File:Sintel_poster.jpg" target="_blank" rel="noopener noreferrer">Sintel</a>, <a href="https://commons.wikimedia.org/wiki/File:Tos-poster.png" target="_blank" rel="noopener noreferrer">Tears of Steel</a> (© Blender Foundation, CC BY 3.0), <a href="https://commons.wikimedia.org/wiki/File:Spring2019PillarPosterBlender.jpg" target="_blank" rel="noopener noreferrer">Spring</a> (© Blender Foundation, CC BY 4.0), <a href="https://commons.wikimedia.org/wiki/File:Sita_STB_Poster.jpg" target="_blank" rel="noopener noreferrer">Sita Sings the Blues</a> (© Nina Paley, CC BY-SA 3.0).</p>';
 }
 function renderCatalog(kind){
  const title=kind==='movie'?'Películas':'Series';
