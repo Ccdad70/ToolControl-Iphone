@@ -25,10 +25,11 @@ async function query(path,params={}){
  }finally{inflight--;}
 }
 
-async function tmdbMovie(id){
+async function tmdbTitle(id,kind){
  if(!TMDB_KEY||!/^\d{1,12}$/.test(String(id||'')))return null;
- return single('tmdb:'+id,async()=>{
-  const url=new URL('https://api.themoviedb.org/3/movie/'+id);
+ const type=kind==='series'?'tv':'movie';
+ return single('tmdb:'+type+':'+id,async()=>{
+  const url=new URL('https://api.themoviedb.org/3/'+type+'/'+id);
   url.searchParams.set('language','es-ES');
   const isToken=TMDB_KEY.startsWith('eyJ')&&TMDB_KEY.length>100;
   if(!isToken)url.searchParams.set('api_key',TMDB_KEY);
@@ -39,13 +40,13 @@ async function tmdbMovie(id){
   return {image:/^\/[a-zA-Z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)?'https://image.tmdb.org/t/p/w500'+poster:null,overview:String(value.overview||'').slice(0,350)};
  });
 }
-async function decorate(rows){
+async function decorate(rows,kind){
  const items=rows.slice(0,24).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
  if(!TMDB_KEY)return items;
  for(let i=0;i<items.length;i+=3){
   await Promise.all(items.slice(i,i+3).map(async it=>{
    try{
-    const m=await tmdbMovie(it.tmdbId);
+    const m=await tmdbTitle(it.tmdbId,kind);
     if(m){it.image=m.image||null;it.overview=m.overview||'';it.imageProvider=m.image?'TMDB':null;}
    }catch{}
   }));
@@ -53,21 +54,21 @@ async function decorate(rows){
  return items;
 }
 
-async function movies(sort,page){
- const cacheKey='movies:'+sort+':'+page;
+async function catalog(kind,sort,page){
+ const cacheKey='catalog:'+kind+':'+sort+':'+page;
  return single(cacheKey,async()=>{
   const today=Number(new Date().toISOString().slice(0,10).replaceAll('-',''));
-  const common={types:'movie',source_ids:'203',source_types:'sub',sort_by:sort==='recent'?'release_date_desc':'popularity_desc',page,limit:12};
-  if(sort==='recent'){common.release_date_start=20250101;common.release_date_end=today;}
-  // Watchmode requires exactly one region when filtering by streaming provider.
-  // Fetch separately, then combine on the backend: users see one unified catalog.
+  const watchmodeType=kind==='series'?'tv_series':'movie';
+  const common={types:watchmodeType,source_ids:'203',source_types:'sub',sort_by:sort==='recent'?'release_date_desc':'popularity_desc',page,limit:12};
+  if(sort==='recent'){common.release_date_start=kind==='series'?20230101:20250101;common.release_date_end=today;}
+  // Filtering a streaming source requires one region per Watchmode request.
   const attempts=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{...common,regions})));
   const ok=attempts.map((r,i)=>r.status==='fulfilled'?{region:['US','CO'][i],data:r.value}:null).filter(Boolean);
   if(!ok.length)throw attempts[0].reason;
-  if(ok.length<2)console.warn('Watchmode catalog partial: '+ok.map(x=>x.region).join(','));
+  if(ok.length<2)console.warn('Watchmode catalog partial: '+kind+' '+ok.map(x=>x.region).join(','));
   const merged=new Map();
   for(const {region,data} of ok){
-   const entries=(Array.isArray(data?.titles)?data.titles:[]).filter(x=>x&&x.id&&x.title&&x.type==='movie');
+   const entries=(Array.isArray(data?.titles)?data.titles:[]).filter(x=>x&&x.id&&x.title&&(kind==='series'?['tv_series','tv_miniseries'].includes(x.type):x.type==='movie'));
    for(let i=0;i<entries.length;i++){
     const x=entries[i],id=String(x.id);
     const old=merged.get(id)||{...x,regions:[],position:i,score:0};
@@ -77,14 +78,12 @@ async function movies(sort,page){
     merged.set(id,old);
    }
   }
-  const ordered=[...merged.values()].sort((a,b)=>
-   sort==='recent'
+  const ordered=[...merged.values()].sort((a,b)=>sort==='recent'
    ?(Number(b.year)||0)-(Number(a.year)||0)||a.position-b.position||b.score-a.score
-   :b.score-a.score||a.position-b.position||(Number(b.year)||0)-(Number(a.year)||0)
-  );
-  const decorated=await decorate(ordered);
+   :b.score-a.score||a.position-b.position||(Number(b.year)||0)-(Number(a.year)||0));
+  const decorated=await decorate(ordered,kind);
   decorated.forEach((it,i)=>{it.rank=(page-1)*24+i+1;it.regions=merged.get(it.id)?.regions||[];});
-  return {titles:decorated,section:sort,page,totalPages:Math.min(300,Math.max(1,...ok.map(x=>Number(x.data?.total_pages)||1))),totalResults:ok.reduce((n,x)=>n+(Number(x.data?.total_results)||0),0),regions:ok.map(x=>x.region),rankingMetric:sort==='popular'?'Combined Watchmode country popularity ranking (not views)':'Release date and country order',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
+  return {titles:decorated,kind,section:sort,page,totalPages:Math.min(300,Math.max(1,...ok.map(x=>Number(x.data?.total_pages)||1))),totalResults:ok.reduce((n,x)=>n+(Number(x.data?.total_results)||0),0),regions:ok.map(x=>x.region),rankingMetric:sort==='popular'?'Watchmode combined popularity ranking (not views)':'Original release date and country order',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
  });
 }
 async function movieLink(id){
@@ -103,11 +102,11 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/health'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder'});return;}
  if(req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
  try{
-  if(url.pathname==='/api/movies'){
+  if(url.pathname==='/api/movies'||url.pathname==='/api/series'){
    const page=Number(url.searchParams.get('page')||1);
    const section=String(url.searchParams.get('section')||'popular');
    if(!Number.isInteger(page)||page<1||page>300||!['popular','recent'].includes(section)){send(res,400,{error:'invalid_query'});return;}
-   send(res,200,await movies(section,page));return;
+   send(res,200,await catalog(url.pathname==='/api/series'?'series':'movie',section,page));return;
   }
   const match=url.pathname.match(/^\/api\/movie\/([0-9]{1,12})$/);
   if(match){send(res,200,await movieLink(match[1]));return;}
