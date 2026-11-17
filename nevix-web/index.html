@@ -77,7 +77,7 @@
    <div class="sidebar-section">EXPLORAR</div>
    <nav class="nav" id="nav"></nav>
    <div class="sidebar-bottom">
-     <div class="demo-chip"><i class="pulse-dot"></i> VERSIÓN 2.5 · PERSONAL</div>
+     <div class="demo-chip"><i class="pulse-dot"></i> VERSIÓN 2.6 · PERSONAL</div>
      <p>Tu contenido, a tu manera.</p>
    </div>
  </aside>
@@ -91,7 +91,7 @@
       </div>
    </header>
    <main id="main" tabindex="-1"><div class="loading">Cargando NÉVIX TV…</div></main>
-   <footer>© NÉVIX TV · V2.5 personal · Solo fuentes y contenidos autorizados</footer>
+   <footer>© NÉVIX TV · V2.6 personal · Solo fuentes y contenidos autorizados</footer>
  </div>
 </div>
 <div id="modal-root"></div>
@@ -1317,7 +1317,9 @@ const VE_PUBLIC_HLS_CANDIDATES=[
  {name:'Venevisión',url:'https://venevision.akamaized.net/hls/live/2098814/VENEVISION/master.m3u8'},
  {name:'Venevisión',url:'https://venevision-ioriver-cdn.encoders.immergo.tv/3/streamPlaylist.m3u8'},
  {name:'Meridiano TV',url:'https://e1.viginet.vectormax.com:5210/quickstart/114-934-21/index.m3u8'},
- {name:'Globovisión',url:'https://vcp5.myplaytv.com/globovision/globovision/playlist.m3u8'}
+ {name:'Globovisión',url:'https://vcp5.myplaytv.com/globovision/globovision/playlist.m3u8'},
+ {name:'Globovisión',url:'https://59d39900ebfb8.streamlock.net/globo-720p/globo-720p/playlist.m3u8'},
+ {name:'Televen',url:'https://cloud.streamingconnect.tv/hls/televen/televenweb.m3u8'}
 ];
 // Las cuatro tarjetas son visibles aun si ningún HLS pasa la prueba.
 // La visibilidad no se confunde con reproducción garantizada.
@@ -1596,33 +1598,38 @@ function openOfficialEmbed(it){
  $('#player-root .player-close')?.focus();
 }
 
-function play(id){
+function play(id,sourceIndex=0){
  const it=itemById(id);
  if(!it)return toast('No encontramos el contenido.');
  if(it.official){window.open(it.url,'_blank','noopener,noreferrer');return;}
  if(it.embedType==='youtube'){openOfficialEmbed(it);return;}
- if(!validStreamUrl(it.url,{localDemo:it.sample}))return toast('La dirección de este video no es válida.');
+ const sourceOptions=it.featuredVenezuela?[...new Set([it.url,...VE_PUBLIC_HLS_CANDIDATES.filter(x=>x.name===it.title).map(x=>x.url)])]:[it.url];
+ const url=it.sample?(DEMO_MEDIA[it.url]||it.url):sourceOptions[Math.max(0,Math.min(sourceIndex,sourceOptions.length-1))];
+ if(!validStreamUrl(url,{localDemo:it.sample}))return toast('La dirección de este video no es válida.');
  closeDetail();disposePlayer();state.playing=it.id;
- const url=it.sample?(DEMO_MEDIA[it.url]||it.url):it.url;
  const isHLS=/\.m3u8(?:[?#]|$)/i.test(url);
- els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><button class="player-close" data-action="close-player">✕ Salir</button></div><video id="nevix-player" class="player-video" controls autoplay playsinline></video><div class="player-status" id="player-status">Preparando reproducción gratuita…</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
+ els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><button class="player-close" data-action="close-player">✕ Salir</button></div><video id="nevix-player" class="player-video" controls autoplay playsinline></video><div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
  const video=$('#nevix-player'),status=$('#player-status'),details=$('#player-details');
  const context=location.protocol==='https:'?'HTTPS':(location.protocol==='content:'||location.protocol==='file:')?'archivo local ('+location.protocol+')':location.protocol;
  const diagBase='Entorno: '+context+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(video.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Conexión reportada: '+(navigator.onLine?'en línea':'sin conexión');
- let engine='',attempt=0,watchdog=null,stopped=false,playing=false,jsAttempt=false,nativeAttempt=false,errors=[];
+ let engine='',attempt=0,watchdog=null,stopped=false,playing=false,jsAttempt=false,nativeAttempt=false,failingOver=false,errors=[];
  const hlsSupported=Boolean(window.Hls?.isSupported?.());
  const nativeSupported=Boolean(video.canPlayType('application/vnd.apple.mpegurl'));
  const stopTimer=()=>{if(watchdog){clearTimeout(watchdog);watchdog=null;}};
  const issue=(reason,detail='')=>{
    status.textContent=reason;
-   if(details){details.textContent=diagBase+' · Motor: '+(engine||'sin motor')+(detail?' · '+detail:'')+' · Últimos errores: '+(errors.join(' | ')||'ninguno')+' · Las señales externas pueden tener restricciones del emisor, región o CORS.';details.hidden=false;}
+   if(details){details.textContent=diagBase+' · Motor: '+(engine||'sin motor')+(detail?' · '+detail:'')+' · Últimos errores: '+(errors.join(' | ')||'ninguno')+' · Las señales externas pueden tener restricciones del emisor, región o CORS.';details.hidden=true;}
  };
  const release=()=>{
    stopTimer();
    if(state.hls){const h=state.hls;state.hls=null;try{h.destroy();}catch(_){}}
    try{video.pause();video.removeAttribute('src');video.load();}catch(_){}
  };
- const stopAndReport=(reason,detail)=>{stopTimer();errors.push(detail||reason);issue(reason,detail);if(it.verifiedManifest&&!playing&&!state.failedStreams.includes(it.id)){state.failedStreams.push(it.id);store();toast('Señal retirada de tu catálogo porque no pudo reproducirse.');}};
+ const stopAndReport=(reason,detail)=>{stopTimer();errors.push(detail||reason);
+   if(it.featuredVenezuela&&!playing&&sourceIndex+1<sourceOptions.length){if(failingOver)return;failingOver=true;status.textContent='La señal '+(sourceIndex+1)+' no respondió. Probando otra fuente pública…';const retryFrom=state.playing;setTimeout(()=>{if(!stopped&&state.playing===retryFrom)play(id,sourceIndex+1);},250);return;}
+   issue(it.featuredVenezuela?'Sin transmisión compatible de '+it.title+' en este dispositivo. Utiliza el enlace oficial de abajo o vuelve a intentarlo más tarde.':reason,detail);
+   if(it.verifiedManifest&&!it.featuredVenezuela&&!playing&&!state.failedStreams.includes(it.id)){state.failedStreams.push(it.id);store();toast('Señal retirada de tu catálogo porque no pudo reproducirse.');}
+ };
  const watchdogAfter=(ms,why,run)=>{
    stopTimer();const n=attempt;
    watchdog=setTimeout(()=>{if(stopped||n!==attempt||playing)return;run(why);},ms);
@@ -1631,7 +1638,7 @@ function play(id){
    if(stopped)return;
    if(!nativeSupported){stopAndReport('Este navegador no ofrece reproducción HLS nativa.',why);return;}
    release();engine='nativo';attempt++;nativeAttempt=true;playing=false;
-   status.textContent='Probando motor nativo de Android…';
+   status.textContent=it.featuredVenezuela?'Probando fuente '+(sourceIndex+1)+' de '+sourceOptions.length+' en Android…':'Probando motor nativo de Android…';
    try{video.src=url;video.load();tryAutoPlay(video);}catch(e){stopAndReport('No se pudo iniciar el motor nativo.',String(e?.message||e));return;}
    watchdogAfter(11000,'La señal no respondió al motor nativo',()=>stopAndReport('La señal no se pudo reproducir en este dispositivo. Es posible que su URL esté caducada o restringida.','Tiempo de espera motor nativo'));
  };
@@ -1639,10 +1646,10 @@ function play(id){
    if(stopped)return;
    if(!hlsSupported){if(nativeSupported&&!nativeAttempt){selectNative(why);return;}stopAndReport('HLS.js no está disponible para esta transmisión.',why);return;}
    release();engine='HLS.js';attempt++;jsAttempt=true;playing=false;
-   status.textContent='Conectando con HLS.js…';
+   status.textContent=it.featuredVenezuela?'Conectando fuente '+(sourceIndex+1)+' de '+sourceOptions.length+' mediante HLS.js…':'Conectando con HLS.js…';
    try{
      const hls=new window.Hls({enableWorker:true,lowLatencyMode:false});state.hls=hls;
-     hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{if(stopped||state.hls!==hls)return;status.textContent='Señal identificada, preparando video…';tryAutoPlay(video);});
+     hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{if(stopped||state.hls!==hls)return;status.textContent='Formato HLS reconocido; cargando imagen…';tryAutoPlay(video);});
      hls.on(window.Hls.Events.ERROR,(_,data)=>{
        if(stopped||state.hls!==hls||!data?.fatal)return;
        const detail=String(data.type||'error')+' / '+String(data.details||'sin detalle');
