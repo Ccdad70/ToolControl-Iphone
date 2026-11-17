@@ -40,7 +40,7 @@ async function tmdbMovie(id){
  });
 }
 async function decorate(rows){
- const items=rows.slice(0,12).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
+ const items=rows.slice(0,24).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
  if(!TMDB_KEY)return items;
  for(let i=0;i<items.length;i+=3){
   await Promise.all(items.slice(i,i+3).map(async it=>{
@@ -57,13 +57,34 @@ async function movies(sort,page){
  const cacheKey='movies:'+sort+':'+page;
  return single(cacheKey,async()=>{
   const today=Number(new Date().toISOString().slice(0,10).replaceAll('-',''));
-  const opts={types:'movie',regions:'US,CO',source_ids:'203',source_types:'sub',sort_by:sort==='recent'?'release_date_desc':'popularity_desc',page,limit:12};
-  if(sort==='recent'){opts.release_date_start=20250101;opts.release_date_end=today;}
-  const data=await query('/list-titles',opts);
-  const rows=(Array.isArray(data?.titles)?data.titles:[]).filter(x=>x&&x.id&&x.title&&x.type==='movie');
-  const decorated=await decorate(rows);
-  decorated.forEach((it,i)=>it.rank=(page-1)*12+i+1);
-  return {titles:decorated,section:sort,page,totalPages:Math.min(300,Math.max(1,Number(data?.total_pages)||1)),totalResults:Number(data?.total_results)||0,regions:['US','CO'],rankingMetric:sort==='popular'?'Watchmode popularity (not actual views)':'Movie original release date',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
+  const common={types:'movie',source_ids:'203',source_types:'sub',sort_by:sort==='recent'?'release_date_desc':'popularity_desc',page,limit:12};
+  if(sort==='recent'){common.release_date_start=20250101;common.release_date_end=today;}
+  // Watchmode requires exactly one region when filtering by streaming provider.
+  // Fetch separately, then combine on the backend: users see one unified catalog.
+  const attempts=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{...common,regions})));
+  const ok=attempts.map((r,i)=>r.status==='fulfilled'?{region:['US','CO'][i],data:r.value}:null).filter(Boolean);
+  if(!ok.length)throw attempts[0].reason;
+  if(ok.length<2)console.warn('Watchmode catalog partial: '+ok.map(x=>x.region).join(','));
+  const merged=new Map();
+  for(const {region,data} of ok){
+   const entries=(Array.isArray(data?.titles)?data.titles:[]).filter(x=>x&&x.id&&x.title&&x.type==='movie');
+   for(let i=0;i<entries.length;i++){
+    const x=entries[i],id=String(x.id);
+    const old=merged.get(id)||{...x,regions:[],position:i,score:0};
+    old.regions.push(region);
+    old.position=Math.min(old.position,i);
+    old.score+=12-i;
+    merged.set(id,old);
+   }
+  }
+  const ordered=[...merged.values()].sort((a,b)=>
+   sort==='recent'
+   ?(Number(b.year)||0)-(Number(a.year)||0)||a.position-b.position||b.score-a.score
+   :b.score-a.score||a.position-b.position||(Number(b.year)||0)-(Number(a.year)||0)
+  );
+  const decorated=await decorate(ordered);
+  decorated.forEach((it,i)=>{it.rank=(page-1)*24+i+1;it.regions=merged.get(it.id)?.regions||[];});
+  return {titles:decorated,section:sort,page,totalPages:Math.min(300,Math.max(1,...ok.map(x=>Number(x.data?.total_pages)||1))),totalResults:ok.reduce((n,x)=>n+(Number(x.data?.total_results)||0),0),regions:ok.map(x=>x.region),rankingMetric:sort==='popular'?'Combined Watchmode country popularity ranking (not views)':'Release date and country order',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
  });
 }
 async function movieLink(id){
@@ -98,9 +119,8 @@ server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='
 async function checkCatalogHealth(){
  if(!KEY)return;
  try{
-  const data=await query('/list-titles',{types:'movie',regions:'US,CO',source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1});
-  const rows=Array.isArray(data?.titles)?data.titles:[];
-  console.log('Watchmode health check: '+(rows.length?'catalog_ok':'catalog_empty')+'; count='+rows.length+'; pages='+String(data?.total_pages||0));
+  const result=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:'movie',regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1})));
+  result.forEach((x,i)=>{const region=['US','CO'][i];const count=x.status==='fulfilled'?(Array.isArray(x.value?.titles)?x.value.titles.length:0):-1;console.log('Watchmode health check: region='+region+' status='+(x.status==='fulfilled'?'ok':'error')+' titles='+count+' reason='+(x.status==='rejected'?String(x.reason.error||x.reason.name||'unknown'):'none'));});
  }catch(e){
   console.error('Watchmode health check: error='+String(e.error||e.name||'unknown')+'; status='+String(e.status||0));
  }
