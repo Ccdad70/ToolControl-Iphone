@@ -10,6 +10,8 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.900.0"
+    "@aws-sdk/client-s3": "^3.900.0",
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@ffprobe-installer/ffprobe": "2.1.2"
   }
 }
