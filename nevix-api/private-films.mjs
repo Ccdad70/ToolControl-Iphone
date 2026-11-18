@@ -61,6 +61,52 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
   return {ETag};
  }
+ function multipartSignatureHeaders(contentType='',bodyLength=null){
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const date=stamp.slice(0,8);
+  // Same Telnyx-supported, server-only authorization used by rawUploadPart.
+  const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature='+('0'.repeat(64));
+  return {Authorization:authorization,'x-amz-date':stamp,...(contentType?{'Content-Type':contentType}:{}),...(bodyLength!==null?{'Content-Length':String(bodyLength)}:{})};
+ }
+ async function multipartRequest(method,key,query,body=null,contentType=''){
+  const objectPath=String(key).split('/').map(encodeURIComponent).join('/');
+  const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectPath+(query?'?'+query:'');
+  const buffer=body===null?null:Buffer.isBuffer(body)?body:Buffer.from(String(body),'utf8');
+  const response=await fetch(uri,{method,headers:multipartSignatureHeaders(contentType,buffer?.length??(method==='POST'?0:null)),...(buffer?{body:buffer}:{}),signal:AbortSignal.timeout(90000)});
+  if(!response.ok){
+   const error=Error('Telnyx rechazó una operación multipart HTTP '+response.status);
+   error.name='TelnyxMultipartHttpError';error.$metadata={httpStatusCode:response.status};
+   if(response.body){try{await response.body.cancel();}catch(_){}}
+   throw error;
+  }
+  return response;
+ }
+ const storageOps={
+  async start(key){
+   const response=await multipartRequest('POST',key,'uploads=null',null,'video/mp4');
+   const xml=await response.text();
+   const uploadId=xml.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1]||'';
+   if(!/^[a-zA-Z0-9_~+=-]{6,256}$/.test(uploadId))throw Error('Telnyx no devolvió un identificador multipart válido.');
+   return {UploadId:uploadId};
+  },
+  async part(key,uploadId,n,bytes){
+   if(!/^[a-zA-Z0-9_~+=-]{6,256}$/.test(uploadId))throw Error('Identificador multipart inválido.');
+   return rawUploadPart(key,uploadId,n,bytes,bytes.length,'video/mp4');
+  },
+  async complete(key,uploadId,parts){
+   if(!/^[a-zA-Z0-9_~+=-]{6,256}$/.test(uploadId))throw Error('Identificador multipart inválido.');
+   const escXml=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+   const xml='<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'+parts.map(p=>'<Part><PartNumber>'+Number(p.PartNumber)+'</PartNumber><ETag>'+escXml(p.ETag)+'</ETag></Part>').join('')+'</CompleteMultipartUpload>';
+   const response=await multipartRequest('POST',key,'uploadId='+encodeURIComponent(uploadId),xml,'application/xml');
+   const body=await response.text();
+   if(!body.includes('CompleteMultipartUploadResult')||/<Error[ >]/.test(body))throw Error('Telnyx no confirmó el ensamblaje multipart.');
+  },
+  async abort(key,uploadId){
+   if(!/^[a-zA-Z0-9_~+=-]{6,256}$/.test(uploadId))return;
+   const response=await multipartRequest('DELETE',key,'uploadId='+encodeURIComponent(uploadId));
+   if(response.body){try{await response.body.cancel();}catch(_){}}
+  }
+ };
  async function telnyxSignedUrl(key,ttl=240){
   // Telnyx requires its own presigned URL API. Never sign with the AWS SDK;
   // doing so can reveal the API key embedded in the S3 Access Key ID.
@@ -182,7 +228,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   return running;
  }
  const remux=configured?createPrivateRemux({
-  client,bucket,
+  client,bucket,storageOps,
   finalize:async(original,key,size)=>{
    // Verify persisted object before switching the catalog to its new copy.
    const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
@@ -359,7 +405,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    const content=Buffer.from('NEVIX-STREAM-TEST');
    await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
    stage='multipart_probe';
-   await verifyMultipartStorage(client,bucket);
+   await verifyMultipartStorage(client,bucket,storageOps);
    console.log('NÉVIX Telnyx multipart upload probe: ok=true verified_parts=2 bytes=5373952');
    stage='catalog_sync';
    const rows=await sync(true);
