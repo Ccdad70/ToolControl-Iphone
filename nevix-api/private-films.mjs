@@ -124,8 +124,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    });
    let processed=0,changed=updated.length!==records.length||updated.some(x=>!old.has(x.key)||old.get(x.key)?.etag!==x.etag);
    for(const it of updated){
-    if(it.status==='new'&&processed<8){
-     await enrich(it);
+    if(it.status==='new'){
+     if(processed<8)await enrich(it);
+     else{const inferred=inferMovie(it.key);it.title=inferred.title;it.year=inferred.year;it.status='review';}
      it.publicationStatus=it.status==='ready'?'ready':'review';
      it.status='processing';
      processed++;changed=true;
