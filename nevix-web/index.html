@@ -89,6 +89,10 @@
 #player-root .player-shell:fullscreen .official-youtube-player,
 #player-root .player-shell:-webkit-full-screen .official-youtube-player{width:100%;height:100%;min-height:0}
 @media(max-width:480px){#player-root .player-modal-root{padding:8px}#player-root .player-top{padding:10px 11px;gap:6px;font-size:13px}#player-root .player-actions{gap:5px}#player-root .player-fullscreen,#player-root .player-close{padding:8px 9px;font-size:12px}}
+
+/* Estado de conexión únicamente para películas privadas; sin botones técnicos. */
+#player-root .player-shell:has(.player-video) .player-status.nevix-private-status{display:block!important;font-size:12px;text-align:center;padding:10px 15px;color:#cbd8f4;background:#12172a;min-height:30px}
+#player-root .player-shell.nevix-video-ready .player-status.nevix-private-status{display:none!important}
 </style>
 <style id="nevix-cinema-v3">
 /* NÉVIX CINEMA — capa visual responsive; no altera motores de reproducción */
@@ -2221,6 +2225,129 @@ function unmuteYoutube(){
 }
 let currentLiveEngine=null;
 
+let privateMediaSession=null;
+
+// Android's HTML5 <video src> does not reliably start some fragmented MP4s.
+// MSE receives the same signed, private HTTP Range stream, retaining the
+// original file in Telnyx and avoiding an expensive conversion/re-upload.
+function startPrivateFragmentedMP4({url,video,onStatus,onError}){
+ const MSE=window.MediaSource;
+ if(!MSE||typeof MSE.isTypeSupported!=='function')throw Error('Este navegador no admite el reproductor de MP4 fragmentado.');
+ const controller=new AbortController();
+ let active=true,mediaSource=null,sourceBuffer=null,objectUrl='',offset=0;
+ const CHUNK=2*1024*1024;
+ const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+ const session={cancel(){
+  active=false;
+  controller.abort();
+  if(objectUrl){try{URL.revokeObjectURL(objectUrl);}catch(_){}objectUrl='';}
+ }};
+ privateMediaSession=session;
+ const rangeFetch=async(start,end)=>{
+  const response=await fetch(url,{method:'GET',headers:{Range:'bytes='+start+'-'+end},cache:'no-store',signal:controller.signal});
+  if(response.status!==206)throw Error('El servidor no entregó el fragmento solicitado (HTTP '+response.status+').');
+  const match=String(response.headers.get('content-range')||'').match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+  if(!match||Number(match[1])!==start)throw Error('El servidor respondió con un rango de video incorrecto.');
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  if(!bytes.length||bytes.length!==Number(match[2])-start+1)throw Error('El video se recibió incompleto.');
+  return {bytes,total:Number(match[3])};
+ };
+ const codecFromInit=bytes=>{
+  const ascii=(a,b)=>String.fromCharCode(...bytes.subarray(a,b));
+  if(bytes.length<1500||ascii(4,8)!=='ftyp'||!ascii(0,Math.min(bytes.length,32000)).includes('moof')){
+   // A moof need not be in the first 32 KB of every fragmented MP4.
+   if(bytes.length<1500||ascii(4,8)!=='ftyp')throw Error('El archivo no contiene una cabecera MP4 válida.');
+  }
+  const limit=Math.min(bytes.length-12,60000);
+  let videoCodec='',hasAudio=false,fragmented=false;
+  for(let i=0;i<limit;i++){
+   if(bytes[i]===0x61&&bytes[i+1]===0x76&&bytes[i+2]===0x63&&bytes[i+3]===0x43&&bytes[i+4]===1){
+    videoCodec='avc1.'+[bytes[i+5],bytes[i+6],bytes[i+7]].map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+   }
+   if(bytes[i]===0x6d&&bytes[i+1]===0x70&&bytes[i+2]===0x34&&bytes[i+3]===0x61)hasAudio=true;
+   if(bytes[i]===0x6d&&bytes[i+1]===0x76&&bytes[i+2]===0x65&&bytes[i+3]===0x78)fragmented=true;
+  }
+  if(!fragmented)throw Error('Este archivo no contiene segmentos MP4 compatibles con el motor alternativo.');
+  if(!videoCodec)throw Error('No se pudo identificar el formato H.264 del video.');
+  const candidates=[videoCodec+(hasAudio?', mp4a.40.2':''),videoCodec];
+  const selected=candidates.map(x=>'video/mp4; codecs="'+x+'"').find(x=>MSE.isTypeSupported(x));
+  if(!selected)throw Error('Este navegador no puede decodificar el video con su códec actual.');
+  return selected;
+ };
+ const waitOpen=()=>new Promise((resolve,reject)=>{
+  if(mediaSource.readyState==='open')return resolve();
+  const opened=()=>{mediaSource.removeEventListener('error',failed);resolve();};
+  const failed=()=>{mediaSource.removeEventListener('sourceopen',opened);reject(Error('El navegador rechazó el reproductor multimedia.'));};
+  mediaSource.addEventListener('sourceopen',opened,{once:true});
+  mediaSource.addEventListener('error',failed,{once:true});
+ });
+ const append=bytes=>new Promise((resolve,reject)=>{
+  if(!active)return reject(Error('Reproducción cancelada.'));
+  const done=()=>{sourceBuffer.removeEventListener('error',fail);resolve();};
+  const fail=()=>{sourceBuffer.removeEventListener('updateend',done);reject(Error('El reproductor no pudo interpretar los fragmentos MP4.'));};
+  sourceBuffer.addEventListener('updateend',done,{once:true});
+  sourceBuffer.addEventListener('error',fail,{once:true});
+  try{sourceBuffer.appendBuffer(bytes);}catch(e){
+   sourceBuffer.removeEventListener('updateend',done);
+   sourceBuffer.removeEventListener('error',fail);
+   reject(Error(e?.name==='QuotaExceededError'?'El buffer del dispositivo se llenó.':'No se pudo procesar el video fragmentado.'));
+  }
+ });
+ const bufferAhead=()=>{
+  try{
+   for(let i=0;i<video.buffered.length;i++){
+    if(video.buffered.start(i)<=video.currentTime+0.5&&video.buffered.end(i)>=video.currentTime)
+     return video.buffered.end(i)-video.currentTime;
+   }
+  }catch(_){}
+  return 0;
+ };
+ const run=async()=>{
+  onStatus('Iniciando reproductor compatible…');
+  const first=await rangeFetch(0,CHUNK-1);
+  const total=first.total;
+  if(!Number.isSafeInteger(total)||total<=CHUNK)throw Error('El archivo no tiene un tamaño válido.');
+  const mime=codecFromInit(first.bytes);
+  if(!active)return;
+  mediaSource=new MSE();
+  objectUrl=URL.createObjectURL(mediaSource);
+  video.src=objectUrl;
+  video.load();
+  await waitOpen();
+  if(!active)return;
+  sourceBuffer=mediaSource.addSourceBuffer(mime);
+  sourceBuffer.mode='segments';
+  await append(first.bytes);
+  offset=first.bytes.length;
+  onStatus('Preparando imagen y sonido…');
+  video.play().catch(e=>{if(e?.name==='NotAllowedError')onStatus('Pulsa reproducir para comenzar la película.');});
+  while(active&&offset<total){
+   if(bufferAhead()>50){await sleep(700);continue;}
+   if(sourceBuffer.updating){await sleep(80);continue;}
+   if(video.currentTime>75&&sourceBuffer.buffered.length){
+    const cut=video.currentTime-35;
+    if(sourceBuffer.buffered.start(0)<cut-15){
+     await new Promise((resolve,reject)=>{
+      sourceBuffer.addEventListener('updateend',resolve,{once:true});
+      try{sourceBuffer.remove(sourceBuffer.buffered.start(0),cut);}catch(e){reject(e);}
+     }).catch(()=>{});
+    }
+   }
+   const part=await rangeFetch(offset,Math.min(total-1,offset+CHUNK-1));
+   if(!active)return;
+   await append(part.bytes);
+   offset+=part.bytes.length;
+  }
+  if(active&&mediaSource.readyState==='open'&&!sourceBuffer.updating){try{mediaSource.endOfStream();}catch(_){}}
+ };
+ void run().catch(e=>{
+  if(!active||e?.name==='AbortError')return;
+  onError(e?.message||'No se pudo reproducir el video fragmentado.');
+ });
+ return session;
+}
+
+
 function updatePlayerFullscreenButton(){
  const shell=document.querySelector('#player-root .player-shell');
  const button=shell?.querySelector('.player-fullscreen');
@@ -2274,6 +2401,7 @@ function disposePlayer(){
  youtubeSession=null;
  if(youtubePlayer){try{youtubePlayer.destroy();}catch(_){}youtubePlayer=null;}
  if(currentLiveEngine){currentLiveEngine.cancel();currentLiveEngine=null;}
+ if(privateMediaSession){privateMediaSession.cancel();privateMediaSession=null;}
  if(state.hls){state.hls.destroy();state.hls=null;}
  let video=$('#nevix-player');
  if(video){try{video.pause();video.removeAttribute('src');video.load();}catch(_){}}
@@ -2314,6 +2442,7 @@ function play(id,sourceIndex=0){
  const isHLS=/\.m3u8(?:[?#]|$)/i.test(url);
  els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><video id="nevix-player" class="player-video" controls autoplay playsinline></video><div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}${it.featuredVenezuela?'<button class="btn btn-sm" data-action="unmute-player" id="player-unmute" hidden>🔊 Activar sonido</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
  const video=$('#nevix-player'),status=$('#player-status'),details=$('#player-details');
+ if(it.privateMovie&&status)status.classList.add('nevix-private-status');
  const openPrivateFallback=()=>{
   if(!it.privateMovie||it.privateProxyActive||!it.privateFallbackUrl)return false;
   it.privateProxyActive=true;
@@ -2389,7 +2518,7 @@ function play(id,sourceIndex=0){
  };
  video.addEventListener('seeking',()=>{if(it.privateMovie)refreshPrivateAccess();});
  video.addEventListener('waiting',()=>{if(it.privateMovie)refreshPrivateAccess();});
- video.addEventListener('playing',()=>{if(stopped)return;playing=true;if(it.verifiedManifest){it.verifiedPlayback=true;}stopTimer();status.textContent=it.id==='nevix-hls-test'?'Prueba HLS reproduciendo. Motor: '+(engine||'video'):(it.sample?'Reproduciendo demostración original':it.kind==='live'?'▶ EN VIVO — motor '+(engine||'video'):'Reproduciendo video');if(details)details.hidden=true;});
+ video.addEventListener('playing',()=>{if(stopped)return;playing=true;if(it.privateMovie&&video.currentTime>0.1)video.closest('.player-shell')?.classList.add('nevix-video-ready');if(it.verifiedManifest){it.verifiedPlayback=true;}stopTimer();status.textContent=it.id==='nevix-hls-test'?'Prueba HLS reproduciendo. Motor: '+(engine||'video'):(it.sample?'Reproduciendo demostración original':it.kind==='live'?'▶ EN VIVO — motor '+(engine||'video'):'Reproduciendo video');if(details)details.hidden=true;});
  video.addEventListener('error',()=>{
    if(stopped)return;
    if(it.privateMovie&&openPrivateFallback())return;
@@ -2399,7 +2528,7 @@ function play(id,sourceIndex=0){
    else if(!isHLS)stopAndReport('El video no se pudo descargar o decodificar.',detail);
  });
  video.addEventListener('loadedmetadata',()=>{const last=state.progress[it.id]?.time||0;if(it.kind!=='live'&&last>1&&Number.isFinite(video.duration)&&last<video.duration-2)video.currentTime=last;});
- video.addEventListener('timeupdate',()=>{if(it.kind==='live'||!Number.isFinite(video.duration)||!video.duration)return;let now=Date.now();if(now-state.lastSave<4000)return;state.lastSave=now;state.progress[it.id]={time:Math.floor(video.currentTime),duration:Math.floor(video.duration)};store();});
+ video.addEventListener('timeupdate',()=>{if(it.privateMovie&&video.currentTime>0.1)video.closest('.player-shell')?.classList.add('nevix-video-ready');if(it.kind==='live'||!Number.isFinite(video.duration)||!video.duration)return;let now=Date.now();if(now-state.lastSave<4000)return;state.lastSave=now;state.progress[it.id]={time:Math.floor(video.currentTime),duration:Math.floor(video.duration)};store();});
  video.addEventListener('ended',()=>{if(it.kind!=='live'){delete state.progress[it.id];store();}if(it.kind==='series'){const episodes=allItems().filter(x=>x.kind==='series'&&(x.seriesName||x.title)===(it.seriesName||it.title)).sort((a,b)=>(a.season-b.season)||(a.episode-b.episode));let n=episodes.findIndex(x=>x.id===it.id);if(n>=0&&episodes[n+1])status.textContent='Episodio terminado. El siguiente: '+episodes[n+1].title;}});
  currentLiveEngine={cancel:()=>{stopped=true;stopTimer();},switchEngine:()=>{
    if(!isHLS)return toast('El video no es una señal HLS.');
@@ -2410,13 +2539,23 @@ function play(id,sourceIndex=0){
  if(isHLS){if(hlsSupported)selectJS('Inicio');else if(nativeSupported)selectNative('HLS.js no disponible');else stopAndReport('Este navegador no soporta reproducción HLS.','No hay motores HLS');}
  else{
   engine='video HTML5';
-  video.src=url;
-  tryAutoPlay(video);
+  if(it.privateMovie&&it.privateProxyActive&&window.MediaSource?.isTypeSupported){
+   try{
+    engine='MP4 fragmentado';
+    startPrivateFragmentedMP4({url,video,onStatus:msg=>{if(status)status.textContent=msg;},onError:msg=>{if(state.playing===it.id)stopAndReport(msg,'El motor de MP4 fragmentado no consiguió reproducir el archivo.');}});
+    watchdogAfter(26000,'El video no empezó',()=>{
+     if(video.currentTime<0.25&&video.readyState<3)stopAndReport('La película sigue sin iniciar en este dispositivo. Se necesita convertirla a MP4 estándar.','El archivo fragmentado no produjo imagen en 26 segundos.');
+    });
+   }catch(e){stopAndReport(String(e.message||'Este navegador no admite reproducción MP4 fragmentada.'));}
+  }else{
+   video.src=url;
+   tryAutoPlay(video);
+  }
   if(it.privateMovie&&!it.privateProxyActive){
    watchdogAfter(11000,'El reproductor no pudo iniciar el video',()=>{
     if(video.readyState<2&&!openPrivateFallback())stopAndReport('No se pudo cargar el video. Comprueba si el MP4 es compatible con este dispositivo.','Reproductor sin imagen tras 11 segundos');
    });
-  }else if(it.privateMovie){
+  }else if(it.privateMovie&&!window.MediaSource?.isTypeSupported){
    watchdogAfter(16000,'El video privado no respondió',()=>{if(video.readyState<2)stopAndReport('La película no se pudo cargar. El servidor respondió, pero el video no empezó.','Sin datos reproducibles después de 16 segundos');});
   }
  }
