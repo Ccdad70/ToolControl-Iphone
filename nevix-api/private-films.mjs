@@ -44,7 +44,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
  const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
- let catalog=null,cacheUntil=0,running=null;
+ let catalog=null,cacheUntil=0,running=null,multipartReady=false;
 
  async function rawUploadPart(key,uploadId,partNumber,body,declaredSize,contentType='application/octet-stream'){
   // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
@@ -356,6 +356,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const rows=await sync(true);
     const item=rows.find(x=>x.id===string(arg.id)&&x.status==='ready');
     if(!item)return reply(res,404,{error:'movie_not_found',message:'Selecciona una película disponible del catálogo.'});
+    if(!multipartReady)return reply(res,503,{error:'multipart_not_authorized',message:'Telnyx todavía rechaza la subida de video por partes (HTTP 401). No se iniciará otra conversión que termine fallando. Tu película original sigue a salvo. Comprueba los permisos de Multipart Upload en Telnyx.'});
     const result=remux.start(item);
     if(result.busy)return reply(res,409,{error:'remux_busy',job:result.job,message:'Ya se está preparando otra película.'});
     if(result.error)return reply(res,503,{error:result.error,message:result.error==='media_tools_unavailable'?'Las herramientas FFmpeg/FFprobe no están disponibles en el servidor. El archivo original no fue modificado.':'El archivo no puede prepararse en este servidor.'});
@@ -418,8 +419,14 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    const content=Buffer.from('NEVIX-STREAM-TEST');
    await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
    stage='multipart_probe';
-   await verifyMultipartStorage(client,bucket,storageOps);
-   console.log('NÉVIX Telnyx multipart upload probe: ok=true verified_parts=2 bytes=5373952');
+   try{
+    await verifyMultipartStorage(client,bucket,storageOps);
+    multipartReady=true;
+    console.log('NÉVIX Telnyx multipart upload probe: ok=true verified_parts=2 bytes=5373952');
+   }catch(err){
+    multipartReady=false;
+    console.error('NÉVIX Telnyx multipart upload probe: ok=false http='+String(err?.$metadata?.httpStatusCode||'unknown')+' type='+String(err?.name||'Error').slice(0,45));
+   }
    stage='catalog_sync';
    const rows=await sync(true);
    console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length);
@@ -461,7 +468,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(playbackCode!==206&&playbackCode!==200)throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
     console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
-   return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok'};
+   return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok',multipartReady};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
    const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
