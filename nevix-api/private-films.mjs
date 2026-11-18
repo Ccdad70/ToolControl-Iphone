@@ -331,6 +331,19 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      let count=0;
      for await(const chunk of data.Body){count+=chunk.length;if(count>1024)break;}
      console.log('NÉVIX Telnyx SDK video proxy probe: read_ok=true range='+Boolean(data.ContentRange)+' bytes='+count+' mime='+String(data.ContentType||'').slice(0,45));
+     try{
+      const path=signedVideoPath(firstReady.id).path;
+      const testUrl='http://127.0.0.1:'+Number(process.env.PORT||10000)+path;
+      const tested=await fetch(testUrl,{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)});
+      const length=(await tested.arrayBuffer()).byteLength;
+      const mime=String(tested.headers.get('content-type')||'');
+      const ranges=String(tested.headers.get('content-range')||'');
+      const valid=tested.status===206&&mime.startsWith('video/')&&ranges.startsWith('bytes ')&&length===64;
+      const bad=await fetch(testUrl.replace(/sig=[a-f0-9]{64}/,'sig='+('0'.repeat(64))),{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)});
+      if(bad.body){try{await bad.body.cancel();}catch(_){}}
+      console.log('NÉVIX private video HTTP proxy probe: ok='+valid+' status='+tested.status+' mime='+mime.slice(0,35)+' received='+length+' invalid_token_rejected='+(bad.status===403));
+     }catch(err){console.error('NÉVIX private video HTTP proxy probe: failed type='+String(err?.name||'Error').slice(0,40));}
+
     }catch(err){
      console.error('NÉVIX Telnyx SDK video proxy probe: read_ok=false http='+String(err?.$metadata?.httpStatusCode||'unknown')+' category='+String(err?.name||'error').slice(0,40));
     }
