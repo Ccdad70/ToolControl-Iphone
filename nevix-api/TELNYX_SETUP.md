@@ -14,12 +14,12 @@ Este backend solo utiliza **Telnyx Storage** para la biblioteca propia, no Cloud
    - `NEVIX_PRIVATE_ADMIN_KEY` = clave distinta, de 16+ caracteres, para subir películas
 4. Render vuelve a desplegar la API tras guardar las variables. Verifica `/health` y `/api/private/status`: `privateStorage` / `configured` deben ser true.
 5. En NÉVIX, abre Panel privado, introduce tu clave de administrador, selecciona un MP4 o WebM con video compatible con tu navegador, y pulsa Subir película.
-6. La primera carga configura automáticamente CORS solo para `https://nevix-tv-personal.onrender.com` y no hace público el bucket. Desde el panel puedes revisar y corregir las películas pendientes.
+6. Las películas se suben desde el navegador en partes de 8 MiB a la API NÉVIX (Render). La API envía cada parte al bucket Telnyx mediante S3 Multipart, sin depender de CORS de Telnyx. El bucket sigue siendo privado. Desde el panel puedes revisar y corregir portadas pendientes.
 7. Para el espectador: abre NÉVIX, inicia acceso familiar desde la pantalla privada y las películas se integran directamente en **Películas**. No hay botón público «Mi biblioteca».
 
 ## Seguridad y compatibilidad
 - Telnyx usa el token de API como Access Key ID en operaciones S3. El backend puede usar el SDK para listar/leer/escribir, pero **nunca** el presigner de AWS: expondría la clave en la URL.
-- Los enlaces de carga y reproducción se solicitan a `https://api.telnyx.com/v2/storage/buckets/{bucket}/{object}/presigned_url` con `Authorization: Bearer` solamente desde el backend; las claves no se envían al navegador.
+- Los enlaces temporales **de reproducción** se solicitan a `https://api.telnyx.com/v2/storage/buckets/{bucket}/{object}/presigned_url` con `Authorization: Bearer` únicamente desde el backend; las claves no se envían al navegador. La subida usa el protocolo S3 Multipart en la API, sin enlaces de subida con firma.
 - El bucket sigue siendo privado. Los enlaces temporales pueden ser utilizados por quien los tenga hasta que caduquen. No compartas códigos, enlaces ni claves.
 - Admite carga directa de MP4/WebM de menos de 5 GiB. MKV, HEVC/AC3 y otros códecs pueden requerir conversión externa previa.
 - La API busca metadatos y carátulas con TMDB. Los archivos ambiguos permanecen pendientes y no se muestran con carátulas equivocadas.
@@ -31,3 +31,9 @@ Este backend solo utiliza **Telnyx Storage** para la biblioteca propia, no Cloud
 - GET `https://nevix-catalog-api.onrender.com/health`: el catálogo debe devolver ok=true y privateStorage=false hasta configurar Telnyx.
 - GET `https://nevix-catalog-api.onrender.com/api/private/status` desde el sitio debe devolver provider "Telnyx Storage" y configured=false hasta configurar.
 - Verificar que Watchmode, TMDB, TV, navegación y reproducción del contenido público no se alteraron.
+
+## Corrección de fallos de carga
+- Antes: el endpoint intentaba cambiar CORS del bucket antes de enviar una película, y Telnyx devolvía HTTP 401.
+- Ahora: `POST /api/private/upload/start`, `POST /api/private/upload/part`, `POST /api/private/upload/complete` y `POST /api/private/upload/abort` usan el servidor para transferir partes privadas de 8 MiB.
+- La carga y la reproducción requieren pruebas con un archivo real en Samsung. Los archivos con nombres numéricos, por ejemplo `1000383486.mp4`, necesitan revisión de título para asociar una portada correcta.
+- El arranque comprueba lectura y una escritura multipart temporal de tamaño mínimo con eliminación posterior bajo `nevix-meta/`; el diagnóstico solo registra éxito/error, jamás credenciales.
