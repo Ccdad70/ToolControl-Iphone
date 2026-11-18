@@ -67,13 +67,43 @@ async function tmdbTitle(id,kind){
   return {image:/^\/[a-zA-Z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)?'https://image.tmdb.org/t/p/w500'+poster:null,overview:String(value.overview||'').slice(0,350)};
  });
 }
+
+const cleanFilmTitle=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('en').replace(/[^a-z0-9]+/g,' ').trim();
+// Fallback real de TMDB cuando el catálogo no incluye identificador TMDB.
+async function tmdbSearchPoster(title,year,kind){
+ if(!TMDB_KEY||!title)return null;
+ const type=kind==='series'?'tv':'movie';
+ return single('tmdbFind:'+type+':'+title+':'+year,async()=>{
+  const u=new URL('https://api.themoviedb.org/3/search/'+type);
+  u.searchParams.set('language','en-US');
+  u.searchParams.set('query',String(title));
+  u.searchParams.set('include_adult','false');
+  const expectedYear=Number(year)||0;
+  if(expectedYear>1900&&expectedYear<2100)u.searchParams.set(type==='tv'?'first_air_date_year':'year',String(expectedYear));
+  const token=TMDB_KEY.startsWith('eyJ')&&TMDB_KEY.length>100;
+  if(!token)u.searchParams.set('api_key',TMDB_KEY);
+  const response=await fetch(u,{headers:token?{Authorization:'Bearer '+TMDB_KEY}:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+  if(!response.ok)return null;
+  const data=await response.json();
+  const desired=cleanFilmTitle(title);
+  const found=(Array.isArray(data.results)?data.results:[]).find(x=>{
+   const poster=String(x?.poster_path||'');
+   const names=[x?.title,x?.original_title,x?.name,x?.original_name].map(cleanFilmTitle);
+   const date=String(x?.release_date||x?.first_air_date||'');
+   const yr=Number(date.slice(0,4))||0;
+   return /^\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)&&names.includes(desired)&&(!expectedYear||!yr||Math.abs(yr-expectedYear)<=1);
+  });
+  return found?{image:'https://image.tmdb.org/t/p/w500'+found.poster_path,overview:String(found.overview||'').slice(0,350)}:null;
+ });
+}
 async function decorate(rows,kind){
  const items=rows.slice(0,24).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
  if(!TMDB_KEY)return items;
  for(let i=0;i<items.length;i+=3){
   await Promise.all(items.slice(i,i+3).map(async it=>{
    try{
-    const m=await tmdbTitle(it.tmdbId,kind);
+    let m=await tmdbTitle(it.tmdbId,kind);
+    if(!m?.image)m=await tmdbSearchPoster(it.title,it.year,kind)||m;
     if(m){it.image=m.image||null;it.overview=m.overview||'';it.imageProvider=m.image?'TMDB':null;}
    }catch{}
   }));
@@ -110,7 +140,7 @@ async function catalog(kind,sort,page){
    :b.score-a.score||a.position-b.position||(Number(b.year)||0)-(Number(a.year)||0));
   const decorated=await decorate(ordered,kind);
   decorated.forEach((it,i)=>{it.rank=(page-1)*24+i+1;it.regions=merged.get(it.id)?.regions||[];});
-  return {titles:decorated,kind,section:sort,page,totalPages:Math.min(300,Math.max(1,...ok.map(x=>Number(x.data?.total_pages)||1))),totalResults:ok.reduce((n,x)=>n+(Number(x.data?.total_results)||0),0),regions:ok.map(x=>x.region),rankingMetric:sort==='popular'?'Watchmode combined popularity ranking (not views)':'Original release date and country order',partialPosters:decorated.some(x=>!x.image),postersConfigured:Boolean(TMDB_KEY)};
+  return {titles:decorated,kind,section:sort,page,totalPages:Math.min(300,Math.max(1,...ok.map(x=>Number(x.data?.total_pages)||1))),totalResults:ok.reduce((n,x)=>n+(Number(x.data?.total_results)||0),0),regions:ok.map(x=>x.region),rankingMetric:sort==='popular'?'Watchmode combined popularity ranking (not views)':'Original release date and country order',partialPosters:decorated.some(x=>!x.image),posterCount:decorated.filter(x=>x.image).length,missingPosterCount:decorated.filter(x=>!x.image).length,postersConfigured:Boolean(TMDB_KEY)};
  });
 }
 async function movieLink(id){
