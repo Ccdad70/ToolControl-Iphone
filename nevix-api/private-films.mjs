@@ -325,6 +325,15 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(firstReady){
     stage='presigned_url';
     // Probe is private, with a short TTL. Never log the temporary URL or any credentials.
+    // Probe the same authenticated Range request that the private video proxy will use.
+    try{
+     const data=await client.send(new GetObjectCommand({Bucket:bucket,Key:firstReady.key,Range:'bytes=0-63'}));
+     let count=0;
+     for await(const chunk of data.Body){count+=chunk.length;if(count>1024)break;}
+     console.log('NÉVIX Telnyx SDK video proxy probe: read_ok=true range='+Boolean(data.ContentRange)+' bytes='+count+' mime='+String(data.ContentType||'').slice(0,45));
+    }catch(err){
+     console.error('NÉVIX Telnyx SDK video proxy probe: read_ok=false http='+String(err?.$metadata?.httpStatusCode||'unknown')+' category='+String(err?.name||'error').slice(0,40));
+    }
     const playbackUrl=await telnyxSignedUrl(firstReady.key,240);
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
