@@ -1,6 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { execFile } from 'node:child_process';
 
 const PREFIX='peliculas/';
 const INDEX='nevix-meta/peliculas.json';
@@ -343,6 +344,22 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      console.error('NÉVIX Telnyx SDK video proxy probe: read_ok=false http='+String(err?.$metadata?.httpStatusCode||'unknown')+' category='+String(err?.name||'error').slice(0,40));
     }
     const playbackUrl=await telnyxSignedUrl(firstReady.key,240);
+    stage='ffprobe';
+    // Read only media metadata via FFprobe, never log signed URL or raw provider responses.
+    await new Promise(resolve=>execFile('ffprobe',
+     ['-v','error','-show_entries','format=duration,format_name:stream=codec_name,codec_type,profile,pix_fmt,width,height,sample_rate','-of','json','-probesize','1048576','-analyzeduration','3000000',playbackUrl],
+     {timeout:45000,maxBuffer:256*1024},(err,out)=>{
+      try{
+       if(err){console.log('NÉVIX FFprobe metadata: ok=false code='+String(err?.code||'unknown').slice(0,35));}
+       else{
+        const d=JSON.parse(out);
+        const streams=(d.streams||[]).map(x=>({type:x.codec_type,codec:x.codec_name,profile:String(x.profile||'').slice(0,35),pix_fmt:x.pix_fmt,w:x.width,h:x.height,sample_rate:x.sample_rate}));
+        console.log('NÉVIX FFprobe metadata: ok=true container='+String(d.format?.format_name||'').slice(0,70)+' duration_sec='+String(d.format?.duration||'unknown').slice(0,18)+' streams='+JSON.stringify(streams).slice(0,450));
+       }
+      }catch(_){console.log('NÉVIX FFprobe metadata: parsing_failed');}
+      resolve();
+     })
+    );
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
     // downloading a complete movie or exposing its link in logs.
