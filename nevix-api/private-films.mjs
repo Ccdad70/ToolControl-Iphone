@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, CopyObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
 const INDEX='nevix-meta/peliculas.json';
@@ -91,6 +91,19 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   }
   return raw;
  }
+ const VIDEO_TOKEN_TTL_MS=30*60*1000;
+ const videoSig=(id,expires)=>createHmac('sha256',telnyxKey).update('NEVIX-VIDEO-V1:'+id+':'+expires).digest('hex');
+ function signedVideoPath(id){
+  const expires=Date.now()+VIDEO_TOKEN_TTL_MS;
+  return {path:'/api/private/video?id='+encodeURIComponent(id)+'&expires='+expires+'&sig='+videoSig(id,expires),expiresIn:Math.floor(VIDEO_TOKEN_TTL_MS/1000)};
+ }
+ function checkVideoToken(id,expiresString,signature){
+  if(!/^priv-[a-f0-9]{24}$/.test(id)||!/^\d{13}$/.test(expiresString)||!/^[a-f0-9]{64}$/.test(signature))return false;
+  const expires=Number(expiresString);
+  if(!Number.isSafeInteger(expires)||expires<=Date.now()||expires>Date.now()+VIDEO_TOKEN_TTL_MS+2000)return false;
+  const actual=Buffer.from(signature,'hex'),expected=Buffer.from(videoSig(id,expires),'hex');
+  return timingSafeEqual(actual,expected);
+ }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
  async function body(req){
@@ -175,6 +188,33 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{configured,provider:'Telnyx Storage',supports:['mp4','webm']});
    }
    if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Telnyx Storage aún no está configurado. Utiliza una región US compatible y configura las credenciales.'});
+   if(url.pathname==='/api/private/video'){
+    if(req.method!=='GET'&&req.method!=='HEAD')return reply(res,405,{error:'method_not_allowed'});
+    const id=string(url.searchParams.get('id')),expiration=string(url.searchParams.get('expires'));
+    if(!checkVideoToken(id,expiration,string(url.searchParams.get('sig'))))return reply(res,403,{error:'video_access_expired',message:'El acceso temporal al video expiró.'});
+    const rows=await sync();
+    const entry=rows.find(x=>x.id===id&&x.status==='ready'&&x.key.startsWith(PREFIX)&&SUPPORTED.test(x.key));
+    if(!entry)return reply(res,404,{error:'video_unavailable'});
+    const range=string(req.headers.range);
+    if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>70))return reply(res,416,{error:'invalid_range'});
+    const type=entry.key.toLowerCase().endsWith('.webm')?'video/webm':'video/mp4';
+    if(req.method==='HEAD'){
+     const info=await client.send(new HeadObjectCommand({Bucket:bucket,Key:entry.key}));
+     res.writeHead(200,{'content-type':type,'content-length':String(info.ContentLength||entry.size),'accept-ranges':'bytes','cache-control':'private, no-store','access-control-allow-origin':origin,'x-content-type-options':'nosniff'});
+     res.end();return;
+    }
+    const media=await client.send(new GetObjectCommand({Bucket:bucket,Key:entry.key,...(range?{Range:range}:{})}));
+    if(!media.Body||typeof media.Body.pipe!=='function')throw {status:502,error:'missing_video_stream',message:'Telnyx no devolvió los datos de la película.'};
+    const headers={'content-type':type,'accept-ranges':'bytes','content-disposition':'inline','cache-control':'private, no-store','access-control-allow-origin':origin,'x-content-type-options':'nosniff'};
+    if(media.ContentRange)headers['content-range']=String(media.ContentRange);
+    if(Number.isSafeInteger(Number(media.ContentLength)))headers['content-length']=String(media.ContentLength);
+    res.writeHead(media.ContentRange?206:200,headers);
+    const source=media.Body;
+    source.once('error',()=>{console.error('NÉVIX private video proxy read failed.');try{res.destroy();}catch(_){}});
+    res.once('close',()=>{if(!res.writableEnded){try{source.destroy();}catch(_){}}});
+    source.pipe(res);
+    return;
+   }
    if(url.pathname==='/api/private/catalog'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied',message:'Introduce tu código de acceso familiar.'});
@@ -189,7 +229,17 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const item=rows.find(x=>x.id===id&&x.status==='ready'&&SUPPORTED.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
     const signed=await telnyxSignedUrl(item.key,240);
-    return reply(res,200,{url:signed,expiresIn:240,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
+    const fallback=signedVideoPath(item.id);
+    // Existing videos may have been uploaded before correct MIME handling was enabled.
+    // Only fall back to the application video proxy for unsupported/ambiguous MIME types.
+    let preferProxy=false;
+    try{
+     const check=await fetch(signed,{method:'GET',headers:{Range:'bytes=0-0'},signal:AbortSignal.timeout(8000)});
+     const mime=String(check.headers.get('content-type')||'').toLowerCase().split(';')[0].trim();
+     preferProxy=check.ok&&mime!=='video/mp4'&&mime!=='video/webm';
+     if(check.body){try{await check.body.cancel();}catch(_){}}
+    }catch(_){/* Browser watchdog may use the fallback if required. */}
+    return reply(res,200,{url:signed,expiresIn:240,fallbackPath:fallback.path,fallbackExpiresIn:fallback.expiresIn,preferProxy,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
    if(url.pathname==='/api/private/upload/direct'){
@@ -234,6 +284,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    }
    return reply(res,404,{error:'not_found'});
   }catch(e){
+   if(res.headersSent){try{res.destroy();}catch(_){};return;}
    console.error('NÉVIX private storage request failed:',String(e?.name||'Error'),String(e?.$metadata?.httpStatusCode||''));
    return reply(res,e.status||502,{error:e.error||'storage_unavailable',message:e.message&&e.status?e.message:'No se pudo consultar Telnyx Storage. Revisa el bucket, la región, el CORS y las credenciales.'});
   }
