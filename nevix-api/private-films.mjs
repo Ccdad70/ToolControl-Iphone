@@ -85,7 +85,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   }
   return signed;
  }
- async function rawUploadPart(key,uploadId,partNumber,body){
+ async function rawUploadPart(key,uploadId,partNumber,body,declaredSize){
   // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
   // Never include the API key in a URL, a log, or a browser response.
   const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
@@ -93,7 +93,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature='+('0'.repeat(64));
   const objectKey=key.split('/').map(encodeURIComponent).join('/');
   const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+(uploadId?'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId):'');
-  const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':'application/octet-stream','Content-Length':String(body.length)},body,signal:AbortSignal.timeout(60000)});
+  const byteSize=Number(declaredSize??body.length);
+  const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':'application/octet-stream','Content-Length':String(byteSize)},body,duplex:'half',signal:AbortSignal.timeout(3600000)});
   if(!response.ok)throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
   const ETag=String(response.headers.get('etag')||'');
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
@@ -200,6 +201,25 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{url:signed,expiresIn:3600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
+   if(url.pathname==='/api/private/upload/direct'){
+    if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
+    const name=string(url.searchParams.get('name'));
+    const declaredSize=Number(url.searchParams.get('size'));
+    const wireLength=Number(req.headers['content-length']||0);
+    const ext=name.match(/\.(mp4|webm)$/i);
+    if(!ext||!Number.isSafeInteger(declaredSize)||declaredSize<1||declaredSize>MAX_UPLOAD||wireLength!==declaredSize){
+     return reply(res,400,{error:'invalid_file',message:'El video debe ser MP4 o WebM y coincidir con el tamaño indicado (máximo 5 GB).'});
+    }
+    const clean=name.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,140);
+    const objectKey=PREFIX+Date.now()+'-'+randomUUID()+'-'+clean;
+    await rawUploadPart(objectKey,null,0,req,declaredSize);
+    let scanned=null;
+    try{
+     const movies=await sync(true);
+     scanned={ready:movies.filter(x=>x.status==='ready').length,pending:movies.filter(x=>x.status!=='ready').length};
+    }catch(_){console.error('NÉVIX: película guardada pero no se pudieron actualizar sus metadatos.');}
+    return reply(res,200,{ok:true,stored:true,ready:scanned?.ready??null,pending:scanned?.pending??null,metadataPending:!scanned});
+   }
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
     const rows=await sync(true);
@@ -251,7 +271,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    }finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:singleKey}));}catch(_){}}
    probeStage='raw_put_object';
    const rawKey='nevix-meta/.raw-put-probe-'+randomUUID()+'.bin';
-   try{await rawUploadPart(rawKey,null,0,Buffer.from('NEVIX-RAW-PUT-TEST'));}
+   try{await rawUploadPart(rawKey,null,0,(async function*(){yield Buffer.from('NEVIX-RAW-PUT-TEST');})(),19);}
    finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:rawKey}));}catch(_){}}
    probeStage='create_multipart';
    const payload=Buffer.alloc(6*1024*1024,0);
