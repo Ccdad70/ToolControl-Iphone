@@ -299,16 +299,29 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     console.log('NÉVIX R2 sync: movies='+items.length+' pending='+pendingItems.length);
     return reply(res,200,{ready:items.length-pendingItems.length,pending:pendingItems.length,pendingItems});
    }
+   if(url.pathname==='/api/private/metadata-preview'&&req.method==='POST'){
+    const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
+    if(!entry||!SUPPORTED.test(entry.key)||!['ready','review'].includes(entry.status))
+     return reply(res,404,{error:'not_editable',message:'La película no está disponible para editar. Espera a que finalice su verificación.'});
+    const requestedTitle=string(arg.title),requestedYear=string(arg.year);
+    if(requestedTitle.length<2||requestedTitle.length>130||requestedYear&&!/^(19|20)\d{2}$/.test(requestedYear))
+     return reply(res,400,{error:'invalid_metadata',message:'Escribe un título válido y un año de cuatro cifras.'});
+    const found=await tmdbSearchPoster(requestedTitle,requestedYear,'movie');
+    if(!found?.image)return reply(res,422,{error:'no_exact_match',message:'No se encontró una portada que coincida exactamente con el título y el año. Comprueba la escritura o prueba con el título original.'});
+    return reply(res,200,{ok:true,id:entry.id,title:requestedTitle,year:requestedYear,image:found.image,description:found.overview||'',currentTitle:entry.title});
+   }
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
     if(!entry||!SUPPORTED.test(entry.key))return reply(res,404,{error:'not_found'});
-    if(['processing','processing_failed','backup'].includes(entry.status))return reply(res,409,{error:'not_verified',message:'La película todavía no superó la verificación MP4. No puede publicarse por ahora.'});
+    if(!['ready','review'].includes(entry.status))return reply(res,409,{error:'not_editable',message:'La película está en verificación o es un respaldo y no puede editarse.'});
     const newTitle=string(arg.title).slice(0,130),newYear=string(arg.year).slice(0,4);
     if(newTitle.length<2||newYear&&!/^(19|20)\d{2}$/.test(newYear))return reply(res,400,{error:'invalid_metadata'});
     const meta=await tmdbSearchPoster(newTitle,newYear,'movie');
     if(!meta?.image)return reply(res,422,{error:'no_exact_match',message:'No se encontró una portada que coincida con ese título y año.'});
+    const previousTitle=entry.title;
     entry.title=newTitle;entry.year=newYear;entry.image=meta.image;entry.description=meta.overview||'';entry.status='ready';
     await saveIndex();cacheUntil=Date.now()+90000;
+    console.log('NÉVIX private film metadata corrected: id='+entry.id+' changed='+Boolean(previousTitle!==newTitle)+' poster=true file_unchanged=true');
     return reply(res,200,{ok:true,movie:sanitizedCatalog(entry)});
    }
    return reply(res,404,{error:'not_found'});
