@@ -1939,7 +1939,7 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
  const headers={};
  if(code)headers[adminAccess?'X-Nevix-Admin-Key':'X-Nevix-Access-Code']=code;
  if(payload)headers['Content-Type']='application/json';
- const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(30000),...(payload?{body:JSON.stringify(payload)}:{})});
+ const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(route.includes('/sync')||route.includes('/admin/catalog')?90000:30000),...(payload?{body:JSON.stringify(payload)}:{})});
  let result={};
  try{result=await response.json();}catch(_){}
  if(!response.ok)throw new Error(result.message||((response.status===401)?'Código de acceso incorrecto.':'No se pudo conectar con el servidor privado.'));
@@ -2002,7 +2002,7 @@ function privateAdminSection(){
  +'<label class="field">Película MP4 / WebM (máximo 5 GB por archivo)<input type="file" id="private-film-file" accept=".mp4,.webm,video/mp4,video/webm"></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
- +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida privada por partes mediante NÉVIX hacia Telnyx. Para obtener portada automática, utiliza un nombre como Gladiator.2000.mp4; los nombres numéricos se revisan en Revisar pendientes. Para MKV convierte a MP4 compatible.</p>'
+ +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida privada por streaming mediante NÉVIX. Para encontrar la portada automáticamente, nombra el archivo como Gladiator.2000.mp4. Los archivos con números se identifican en Revisar pendientes.</p>'
  +'</section>';
 }
 const originalRenderAdminForPrivateStorage=renderAdmin;
@@ -2014,12 +2014,23 @@ async function privateSyncAdmin(){
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  if(!key){toast('Introduce tu código de administración del servidor.');return;}
  const status=document.getElementById('private-upload-status');
- if(status)status.textContent='Revisando películas en el servidor privado…';
+ const button=document.querySelector('[data-action="private-sync"]');
+ if(button?.disabled)return;
+ if(button)button.disabled=true;
+ const update=txt=>{if(status)status.textContent=txt;};
+ update('Buscando los videos guardados en Telnyx y sus portadas…');
  try{
   const result=await privateRequest('/api/private/sync',key,true,'POST');
-  if(status)status.textContent='Revisión terminada: '+result.ready+' películas disponibles, '+result.pending+' pendientes de identificación o conversión.';
+  const ready=Number(result.ready)||0,pending=Number(result.pending)||0;
+  update('Revisión terminada: '+ready+' película(s) disponible(s) y '+pending+' pendiente(s) de identificar.'+(pending?' Revisa los títulos y coloca su portada abajo.':(ready&&!privateFamilyCode?' Para verlas en Películas, entra con el acceso familiar.':'')));
+  if(pending)await privateReviewAdmin();
+  else{
+   const panel=document.getElementById('private-pending-review');
+   if(panel)panel.textContent='No hay películas pendientes de identificar.';
+  }
   if(privateFamilyCode)await loadPrivateMovies();
- }catch(e){if(status)status.textContent='No fue posible revisar el servidor: '+e.message;}
+ }catch(e){update('No se pudo revisar la biblioteca: '+String(e?.message||'Error de sincronización.'));}
+ finally{if(button)button.disabled=false;}
 }
 
 async function privateReviewAdmin(){
@@ -2094,10 +2105,16 @@ async function privateUploadAdmin(){
    xhr.ontimeout=()=>reject(Error('La transferencia tardó demasiado.'));
    xhr.send(file);
   });
-  if(done.metadataPending)update('Película guardada en Telnyx. Abre Revisar nuevas películas para actualizar su portada.');
-  else if(Number(done.pending)>0)update('Película guardada. '+done.ready+' listas, '+done.pending+' pendientes de portada. Si el archivo tiene nombre numérico, utiliza Revisar pendientes para indicar su título y año.');
-  else update('Película guardada correctamente en Telnyx y registrada en NÉVIX TV.');
-  if(privateFamilyCode)await loadPrivateMovies();
+  if(done.metadataPending){
+   update('Película guardada en Telnyx. Actualizando ahora el catálogo…');
+   await privateSyncAdmin();
+  }else if(Number(done.pending)>0){
+   update('Película guardada. '+done.ready+' listas y '+done.pending+' pendientes. Escribe el título y año en el formulario que aparece abajo.');
+   await privateReviewAdmin();
+  }else{
+   update('Película guardada correctamente en Telnyx y registrada en NÉVIX TV.');
+   if(privateFamilyCode)await loadPrivateMovies();
+  }
  }catch(e){update('No se completó la subida: '+String(e.message||'Error del servidor.'));}
  finally{if(button)button.disabled=false;}
 }
