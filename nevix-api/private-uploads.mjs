@@ -6,6 +6,8 @@ const MAX_SIZE=5*1024*1024*1024-1;
 const MAX_SESSIONS=3;
 const MAX_AGE=4*60*60*1000;
 const PREFIX='peliculas/';
+const ALLOWED=/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i;
+const CONTENT_TYPES={mp4:'video/mp4',m4v:'video/x-m4v',mkv:'video/x-matroska',avi:'video/x-msvideo',mov:'video/quicktime',webm:'video/webm',wmv:'video/x-ms-wmv',mpeg:'video/mpeg',mpg:'video/mpeg',ts:'video/mp2t',m2ts:'video/mp2t'};
 const safeString=x=>String(x||'').trim();
 
 export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
@@ -43,19 +45,19 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    if(url.pathname==='/api/private/upload/start'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
     const data=await readJson(req),name=safeString(data.name),size=Number(data.size);
-    const ext=name.match(/\.mp4$/i);
+    const ext=name.match(ALLOWED);
     if(!ext||!Number.isSafeInteger(size)||size<1||size>MAX_SIZE){
-     respond(res,400,{error:'invalid_video',message:'Selecciona un MP4 menor de 5 GB.'});return true;
+     respond(res,400,{error:'invalid_video',message:'Selecciona un video MP4, MKV, AVI, MOV, WEBM, WMV, MPEG, TS o M2TS menor de 5 GiB.'});return true;
     }
     if(active.size>=MAX_SESSIONS){respond(res,429,{error:'too_many_uploads',message:'Hay otras cargas activas. Termínalas antes de continuar.'});return true;}
     const cleaned=name.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,140);
     const key=PREFIX+Date.now()+'-'+randomUUID()+'-'+cleaned;
-    const type='video/mp4';
+    const type=CONTENT_TYPES[ext[1].toLowerCase()]||'application/octet-stream';
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
     active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false});
-    console.log('NÉVIX R2 upload start: size_mb='+Math.round(size/1048576)+' chunks='+chunks);
+    console.log('NÉVIX R2 upload start: format='+ext[1].toLowerCase()+' size_mb='+Math.round(size/1048576)+' chunks='+chunks);
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
    }
    if(url.pathname==='/api/private/upload/progress'){
