@@ -195,7 +195,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   try{
    if(url.pathname==='/api/private/status'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
-    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4']});
+    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround'});
    }
    if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY en Render.'});
    if(url.pathname==='/api/private/video'){
