@@ -2035,15 +2035,15 @@ function privateAdminSection(){
  +'<p>Las películas subidas aparecerán automáticamente en Películas tras identificar su portada. Los espectadores no verán ninguna sección de biblioteca privada.</p>'
  +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Cloudflare R2 está conectado y permite subir MP4.':'Para activarlo configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y los códigos NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
- +'<label class="field">Película MP4 (máximo 5 GB por archivo)<input type="file" id="private-film-file" accept=".mp4,video/mp4"></label>'
+ +'<label class="field">Película o video (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB)<input type="file" id="private-film-file" accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*"></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Reparar reproducción MP4 sin perder calidad</button></div>'
- +'<p class="hint">Cada MP4 nuevo se verifica automáticamente después de subirlo. Si está fragmentado, NÉVIX lo prepara sin recodificar y conserva el original. Usa la reparación manual solo si la verificación automática falla.</p>'
+ +'<p class="hint">Cada video se revisa automáticamente. NÉVIX conserva el original en R2 y publica un MP4 H.264/AAC compatible: copia sin modificar el video si es posible, o convierte lo necesario. Para AC3/DTS 5.1 prepara audio estéreo y AAC 5.1. Las conversiones grandes dependen de los recursos de Render.</p>'
  +'<p id="private-remux-status" class="hint" role="status" aria-live="polite"></p>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-library">🎞 Gestionar títulos, portadas y películas</button></div>'
  +'<div id="private-library-list" style="margin-top:12px" aria-live="polite"></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
- +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Carga por bloques de 5 MB. Al terminar, NÉVIX verifica H.264/AAC y prepara automáticamente el MP4 cuando haga falta. Los archivos con nombres numéricos pueden requerir identificar título y portada.</p>'
+ +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida en bloques de 5 MiB. AVI, MKV, MOV, MP4 y otros formatos admitidos se verifican automáticamente. Si hace falta se crea una versión MP4 compatible; usa el título y año para la portada.</p>'
  +'</section>';
 }
 const originalRenderAdminForPrivateStorage=renderAdmin;
@@ -2090,7 +2090,7 @@ async function privateManageR2(){
   const names={ready:'Disponible',backup:'Respaldo original',review:'Pendiente de identificar',processing:'Verificando compatibilidad',processing_failed:'Verificación fallida',new:'Pendiente',unsupported:'Archivo no compatible'};
   const total=files.reduce((x,it)=>x+Math.max(0,Number(it.size)||0),0);
   area.innerHTML='<h3>Archivos en Cloudflare R2 ('+files.length+')</h3>'
-   +'<p class="hint">Espacio ocupado por estos MP4: '+(total/1073741824).toFixed(2)+' GiB. Cada botón elimina solamente el archivo seleccionado, no los otros respaldos. No se puede deshacer.</p>'
+   +'<p class="hint">Espacio ocupado por estos Video: '+(total/1073741824).toFixed(2)+' GiB. Cada botón elimina solamente el archivo seleccionado, no los otros respaldos. No se puede deshacer.</p>'
    +files.map(it=>{
      const id=String(it.id||'');
      if(!/^priv-[a-f0-9]{24}$/.test(id))return '';
@@ -2327,12 +2327,12 @@ async function privateWatchAutomaticMovie(key,started,onUpdate){
     const data=await privateRequest('/api/private/admin/catalog',key,true);
     const pending=(data.items||[]).filter(x=>['review','new'].includes(x.status));
     if(pending.length){
-     update('MP4 compatible y guardado en R2. Falta identificar el título y la portada.');
+     update('Video preparado en MP4 compatible. Falta identificar el título y la portada.');
      await privateReviewAdmin();
     }else{
-     update('MP4 verificado y compatible. Película lista para reproducirse en NÉVIX TV.');
+     update('Video verificado en formato MP4 compatible. Ya puedes probarlo en NÉVIX TV.');
     }
-   }catch(_){update('MP4 reparado y verificado. Actualiza el catálogo de Películas.');}
+   }catch(_){update('Video preparado y verificado. Actualiza el catálogo de Películas.');}
    if(privateFamilyCode)await loadPrivateMovies();
    return true;
   }
@@ -2352,9 +2352,9 @@ async function privateUploadAdmin(){
  const button=document.querySelector('[data-action="private-upload"]');
  if(button?.disabled)return;
  if(!key){toast('Introduce tu código de administración.');return;}
- if(!file){toast('Selecciona una película MP4.');return;}
- if(!/\.mp4$/i.test(file.name)||file.size<=0||file.size>=5*1024*1024*1024){
-  toast('Solo se aceptan archivos MP4 de menos de 5 GB.');return;
+ if(!file){toast('Selecciona un video para subir.');return;}
+ if(!/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(file.name)||file.size<=0||file.size>=5*1024*1024*1024){
+  toast('Formatos: MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS y M2TS (máximo 5 GiB).');return;
  }
  const update=message=>{if(status)status.textContent=message;};
  let sessionId='';
@@ -2372,7 +2372,7 @@ async function privateUploadAdmin(){
     if(progress?.uploadId===previous.id&&progress.name===file.name&&Number(progress.size)===file.size){
      upload={uploadId:progress.uploadId,chunkSize:progress.chunkSize,chunks:progress.chunks};
      received=new Set((progress.receivedParts||[]).map(Number).filter(Number.isSafeInteger));
-     update('Retomando MP4: '+received.size+' bloques ya guardados en Cloudflare R2.');
+     update('Retomando archivo: '+received.size+' bloques ya guardados en Cloudflare R2.');
     }else privateClearUpload();
    }catch(_){privateClearUpload();}
   }
@@ -2383,21 +2383,21 @@ async function privateUploadAdmin(){
   sessionId=String(upload.uploadId||'');
   const bytesPerPart=Number(upload.chunkSize),total=Number(upload.chunks);
   if(!/^[a-f0-9-]{36}$/i.test(sessionId)||!Number.isSafeInteger(bytesPerPart)||bytesPerPart<5*1024*1024||!Number.isSafeInteger(total)||total!==Math.ceil(file.size/bytesPerPart))
-   throw Error('Render no confirmó una sesión válida de subida MP4.');
+   throw Error('Render no confirmó una sesión válida de subida.');
   privateSaveUpload({id:sessionId,fileName:file.name,fileSize:file.size});
   for(let part=1;part<=total;part++){
    const from=(part-1)*bytesPerPart,to=Math.min(file.size,from+bytesPerPart);
-   if(received.has(part)){update('MP4: '+Math.min(99,Math.floor(to/file.size*100))+' % · bloque '+part+' de '+total+' ya guardado.');continue;}
+   if(received.has(part)){update('Video: '+Math.min(99,Math.floor(to/file.size*100))+' % · bloque '+part+' de '+total+' ya guardado.');continue;}
    const piece=file.slice(from,to);
    let delivered=false,problem=null;
    for(let attempt=1;attempt<=5&&!delivered;attempt++){
-    update('Subiendo MP4 · bloque '+part+' de '+total+' · intento '+attempt+'/5…');
+    update('Subiendo video · bloque '+part+' de '+total+' · intento '+attempt+'/5…');
     try{
      await privateSendMp4Part({
       sessionId,part,piece,key,
       onProgress:loaded=>{
        const percent=Math.min(99,Math.floor((from+loaded)/file.size*100));
-       update('Subiendo MP4 a Cloudflare R2… '+percent+' % · bloque '+part+' de '+total);
+       update('Subiendo video a Cloudflare R2… '+percent+' % · bloque '+part+' de '+total);
       }
      });
      delivered=true;
@@ -2412,24 +2412,24 @@ async function privateUploadAdmin(){
    }
    if(!delivered)throw problem||Error('No se pudo completar el bloque '+part+'.');
    privateSaveUpload({id:sessionId,fileName:file.name,fileSize:file.size});
-   update('MP4: '+Math.min(99,Math.floor(to/file.size*100))+' % · bloque '+part+' de '+total+' confirmado.');
+   update('Video: '+Math.min(99,Math.floor(to/file.size*100))+' % · bloque '+part+' de '+total+' confirmado.');
   }
   update('Verificando película completa en Cloudflare R2…');
   const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId});
   if(!done?.stored)throw Error('R2 todavía no confirmó la película completa.');
   sessionId='';privateClearUpload();
   if(done.autoProcessing&&done.jobId){
-   update('MP4 cargado. Iniciando verificación automática de compatibilidad y reparación si hace falta…');
+   update('Video cargado. Comprobando códecs y convirtiendo a MP4 si hace falta…');
    await privateWatchAutomaticMovie(key,done,update);
   }else if(done.validationError){
-   update('MP4 guardado, pero la verificación automática no pudo iniciarse: '+String(done.validationError)+'. Revisa el archivo desde Administración.');
+   update('Video guardado, pero no pudo iniciarse su preparación: '+String(done.validationError)+'. Revisa el archivo desde Administración.');
   }else if(done.metadataPending){
-   update('MP4 guardado en R2; no se confirmó el inicio de la verificación. Consulta su estado en Administración antes de reproducirlo.');
+   update('Archivo guardado en R2; falta confirmar la verificación. Consulta su estado en Administración antes de reproducirlo.');
   }else if(Number(done.pending)>0){
-   update('MP4 almacenado. Comprueba el proceso automático y los títulos pendientes en Administración.');
+   update('Video almacenado. Comprueba el proceso automático y los títulos pendientes en Administración.');
    await privateReviewAdmin();
   }else{
-   update('MP4 guardado en R2. Consulta su estado de compatibilidad antes de reproducirlo.');
+   update('Video guardado en R2. Consulta su estado de compatibilidad antes de reproducirlo.');
   }
  }catch(e){
   const message=String(e?.message||'Error de transferencia.');
