@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
+import { createPrivateRemux } from './private-remux.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFile } from 'node:child_process';
 
@@ -181,6 +182,27 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   })().finally(()=>{running=null;});
   return running;
  }
+ const remux=configured?createPrivateRemux({
+  client,bucket,
+  uploadObject:(key,file,size)=>rawUploadPart(key,null,0,file,size,'video/mp4'),
+  finalize:async(original,key,size)=>{
+   const rows=await sync(true);
+   const source=rows.find(x=>x.id===original.id&&x.key===original.key);
+   const converted=rows.find(x=>x.key===key);
+   if(!source||!converted)throw Error('No fue posible registrar la película convertida.');
+   converted.title=source.title;
+   converted.year=source.year;
+   converted.image=source.image;
+   converted.description=source.description;
+   converted.status='ready';
+   converted.convertedFrom=source.id;
+   converted.size=size;
+   source.status='backup';
+   source.replacedBy=converted.id;
+   await saveIndex();
+   cacheUntil=Date.now()+90000;
+  }
+ }):null;
  const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:()=>sync(true)}):null;
  async function handle(req,res,url){
   try{
@@ -220,7 +242,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied',message:'Introduce tu código de acceso familiar.'});
     const rows=await sync();
-    return reply(res,200,{movies:rows.filter(x=>x.status==='ready').map(sanitizedCatalog),pending:rows.filter(x=>x.status!=='ready').length,updatedAt:new Date().toISOString()});
+    return reply(res,200,{movies:rows.filter(x=>x.status==='ready').map(sanitizedCatalog),pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length,updatedAt:new Date().toISOString()});
    }
    if(url.pathname==='/api/private/stream'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
@@ -262,15 +284,32 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     }catch(_){console.error('NÉVIX: película guardada pero no se pudieron actualizar sus metadatos.');}
     return reply(res,200,{ok:true,stored:true,ready:scanned?.ready??null,pending:scanned?.pending??null,metadataPending:!scanned});
    }
+   if(url.pathname==='/api/private/remux/start'){
+    if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
+    const arg=await body(req);
+    const rows=await sync(true);
+    const item=rows.find(x=>x.id===string(arg.id)&&x.status==='ready');
+    if(!item)return reply(res,404,{error:'movie_not_found',message:'Selecciona una película disponible del catálogo.'});
+    const result=remux.start(item);
+    if(result.busy)return reply(res,409,{error:'remux_busy',job:result.job,message:'Ya se está preparando otra película.'});
+    if(result.error)return reply(res,400,{error:result.error,message:'El archivo no puede prepararse en este servidor.'});
+    return reply(res,202,{ok:true,job:result.job});
+   }
+   if(url.pathname==='/api/private/remux/status'){
+    if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
+    const result=remux.get(url.searchParams.get('jobId'));
+    if(!result)return reply(res,404,{error:'job_not_found',message:'La tarea ya no está activa en este servidor.'});
+    return reply(res,200,{job:result});
+   }
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
     const rows=await sync(true);
-    return reply(res,200,{items:rows.map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''})),ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready').length});
+    return reply(res,200,{items:rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''})),ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length});
    }
    if(url.pathname==='/api/private/upload')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV para subir películas con el nuevo sistema seguro.'});
    if(url.pathname==='/api/private/sync'&&req.method==='POST'){
     const rows=await sync(true);
-    return reply(res,200,{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready').length});
+    return reply(res,200,{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length});
    }
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
@@ -314,7 +353,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
    stage='catalog_sync';
    const rows=await sync(true);
-   console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready').length);
+   console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length);
    const firstReady=rows.find(x=>x.status==='ready'&&SUPPORTED.test(x.key));
    if(firstReady){
     stage='presigned_url';
