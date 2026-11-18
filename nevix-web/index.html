@@ -1995,6 +1995,7 @@ async function playPrivateFilm(item){
   if(!/^https:\/\//i.test(String(result.url||'')))throw Error('El servidor no devolvió un enlace de reproducción válido.');
   item.privateFallbackUrl=typeof result.fallbackPath==='string'&&/^\/api\/private\/video\?/.test(result.fallbackPath)?WATCHMODE_BACKEND+result.fallbackPath:'';
   item.privateFallbackExpiresIn=Math.max(60,Number(result.fallbackExpiresIn)||900);
+  item.privateStandardMp4=Boolean(result.standardMp4);
   const proxyPreferred=Boolean(result.preferProxy||item.privateForceProxy)&&Boolean(item.privateFallbackUrl);
   item.privateProxyActive=proxyPreferred;
   item.url=proxyPreferred?item.privateFallbackUrl:result.url;
@@ -2676,7 +2677,7 @@ function play(id,sourceIndex=0){
  if(isHLS){if(hlsSupported)selectJS('Inicio');else if(nativeSupported)selectNative('HLS.js no disponible');else stopAndReport('Este navegador no soporta reproducción HLS.','No hay motores HLS');}
  else{
   engine='video HTML5';
-  if(it.privateMovie&&it.privateProxyActive&&window.MediaSource?.isTypeSupported){
+  if(it.privateMovie&&it.privateProxyActive&&!it.privateStandardMp4&&window.MediaSource?.isTypeSupported){
    try{
     engine='MP4 fragmentado';
     startPrivateFragmentedMP4({url,video,onStatus:msg=>{if(status)status.textContent=msg;},onError:msg=>{if(state.playing===it.id)stopAndReport(msg,'El motor de MP4 fragmentado no consiguió reproducir el archivo.');}});
