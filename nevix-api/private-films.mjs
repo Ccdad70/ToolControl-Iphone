@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
+import { createPrivateRemux } from './private-remux-r2.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -132,6 +133,21 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   return running;
  }
  const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:()=>sync(true)}):null;
+ const remux=configured?createPrivateRemux({client,bucket,finalize:async(original,newKey,newSize)=>{
+  const rows=await sync(true);
+  const old=rows.find(x=>x.key===original.key&&x.id===original.id);
+  const next=rows.find(x=>x.key===newKey&&x.size===newSize);
+  if(!old||!next||old.status!=='ready')throw Error('No se pudo comprobar el catálogo original y la copia MP4.');
+  Object.assign(next,{
+   title:old.title,year:old.year||'',image:old.image||'',description:old.description||'',
+   status:'ready',container:'standard',remuxed:true,addedAt:old.addedAt||new Date().toISOString()
+  });
+  old.status='backup';
+  await saveIndex();
+  cacheUntil=Date.now()+90000;
+  console.log('NÉVIX R2 MP4 catalog finalized: standard=true original_backup=true');
+  void checkPlayback();
+ }}):null;
  async function handle(req,res,url){
   try{
    if(url.pathname==='/api/private/status'){
@@ -188,6 +204,21 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      fallbackPath:proxy.path,fallbackExpiresIn:proxy.expiresIn,preferProxy:true,standardMp4:true,type:'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
+   if(url.pathname==='/api/private/remux/start'&&req.method==='POST'){
+    if(!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 no está listo para reparar el video.'});
+    const arg=await body(req),rows=await sync(true);
+    const candidates=rows.filter(x=>x.status==='ready'&&SUPPORTED.test(x.key));
+    const item=candidates.find(x=>x.id===string(arg.id))||(!string(arg.id)&&candidates.length===1?candidates[0]:null);
+    if(!item)return reply(res,404,{error:'movie_not_available',message:'Selecciona una película disponible para reparar.'});
+    if(item.remuxed)return reply(res,409,{error:'already_repaired',message:'Esta película ya tiene un MP4 estándar. Comprueba su reproducción.'});
+    const result=remux.start(item);
+    if(result.error)return reply(res,503,{error:result.error,message:result.error==='media_tools_unavailable'?'El servidor todavía no dispone de FFmpeg y FFprobe. La película original no se modificó.':'No se pudo iniciar la preparación MP4.'});
+    return reply(res,result.busy?409:202,result);
+   }
+   if(url.pathname==='/api/private/remux/status'&&req.method==='GET'){
+    const job=remux?.get(url.searchParams.get('jobId'));
+    return job?reply(res,200,job):reply(res,404,{error:'job_not_found',message:'La preparación ya no está activa. Comprueba el catálogo antes de repetirla.'});
+   }
    if(url.pathname==='/api/private/upload/direct')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV; el MP4 se sube por bloques a R2.'});
    if(url.pathname.startsWith('/api/private/upload/')&&!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 todavía no está configurado o no superó la prueba de subida. Comprueba las credenciales.'});
    if(await uploads.handle(req,res,url))return;
