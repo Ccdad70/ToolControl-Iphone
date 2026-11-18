@@ -124,7 +124,7 @@ function conversionPlan(before,filename,layout){
  return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels,videoIndex:video.index,audioIndex:audio?.index??null};
 }
 async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
- const args=['-hide_banner','-nostdin','-loglevel','error','-stats_period','2','-progress','pipe:2','-y','-threads','1','-i',input,
+ const args=['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-threads','1','-i',input,
   '-map','0:'+plan.videoIndex];
  if(plan.hasAudio){
   args.push('-map','0:'+plan.audioIndex);
