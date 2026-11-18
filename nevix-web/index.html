@@ -2161,7 +2161,7 @@ async function privatePreviewR2Poster(id){
   img.loading='lazy';
   img.style.cssText='width:135px;max-width:100%;border-radius:10px;display:block;margin:12px 0;box-shadow:0 8px 24px #0009';
   preview.appendChild(img);
-  const info=document.createElement('p');info.textContent=title+(year?' ('+year+')':'')+' — Comprueba que la imagen corresponda a la película correcta.';preview.appendChild(info);
+  const info=document.createElement('p');info.textContent='Coincidencia encontrada en TMDB: '+String(match.matchedTitle||title)+(match.matchedYear?' ('+String(match.matchedYear)+')':'')+'. Confirma visualmente que la portada sea la correcta.';preview.appendChild(info);
   const save=document.createElement('button');save.className='btn btn-primary';save.type='button';save.dataset.action='private-r2-edit-save';save.dataset.id=id;save.dataset.title=title;save.dataset.year=year;save.textContent='✓ Guardar título y portada';preview.appendChild(save);
   if(status)status.textContent='Vista previa encontrada. Revisa la portada antes de guardar.';
  }catch(error){
