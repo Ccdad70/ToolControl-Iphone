@@ -42,6 +42,25 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
  const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:telnyxKey},maxAttempts:2}):null;
+ if(client)client.middlewareStack.add((next,context)=>async(args)=>{
+  if(context.commandName==='UploadPartCommand'){
+   const h=args.request?.headers||{};
+   const sha=String(h['x-amz-content-sha256']||'');
+   const diagnostic={
+    contentLength:String(h['content-length']||''),
+    hasChunkedTransfer:/chunked/i.test(String(h['transfer-encoding']||'')),
+    contentEncoding:String(h['content-encoding']||''),
+    shaMode:/STREAMING/i.test(sha)?'streaming':sha==='UNSIGNED-PAYLOAD'?'unsigned':sha?'hashed':'unspecified',
+    hasChecksumHeaders:Object.keys(h).some(x=>/^x-amz-checksum-/i.test(x)),
+    hasChecksumTrailer:Boolean(h['x-amz-trailer']),
+    payloadIsBuffer:Buffer.isBuffer(args.request?.body),
+    payloadBytes:Number(args.request?.body?.length)||0
+   };
+   console.log('NÉVIX Telnyx UploadPart diagnostic '+JSON.stringify(diagnostic));
+  }
+  return next(args);
+ },{step:'finalizeRequest',priority:'low',name:'telnyxRedactedUploadPartDiagnostics'});
+
  let catalog=null,cacheUntil=0,running=null;
  async function telnyxSignedUrl(key,ttl){
   // Use Telnyx's own presigned-token API, never the AWS SDK presigner.
