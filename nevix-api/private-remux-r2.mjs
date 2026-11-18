@@ -137,67 +137,129 @@ function validateMedia(input,output){
  const d1=Number(input.format?.duration),d2=Number(output.format?.duration);
  return Number.isFinite(d1)&&Number.isFinite(d2)&&d1>2&&Math.abs(d1-d2)<=Math.max(3,d1*0.002);
 }
-export function createPrivateRemux({client,bucket,finalize}){
+async function detectMp4Layout(path,size){
+ const fd=await openFile(path,'r');
+ let offset=0,foundMoov=false,moovBeforeMdat=false,fragmented=false,foundMdat=false,steps=0;
+ try{
+  while(offset<size&&steps++<128){
+   const buffer=Buffer.alloc(16);
+   const {bytesRead}=await fd.read(buffer,0,16,offset);
+   if(bytesRead<8)break;
+   const atom=buffer.toString('latin1',4,8);
+   let length=buffer.readUInt32BE(0);
+   if(length===1){
+    if(bytesRead<16)break;
+    const large=buffer.readBigUInt64BE(8);
+    if(large>BigInt(Number.MAX_SAFE_INTEGER))break;
+    length=Number(large);
+   }
+   if(length===0)length=size-offset;
+   if(length<8||length>size-offset)break;
+   if(atom==='moov'){foundMoov=true;if(!foundMdat)moovBeforeMdat=true;}
+   if(atom==='moof')fragmented=true;
+   if(atom==='mdat'){foundMdat=true;break;}
+   offset+=length;
+  }
+ }finally{await fd.close();}
+ if(!foundMoov||!foundMdat)throw Error('No se encontró un índice MP4 completo; revisa el archivo de origen.');
+ return {fragmented,needsRepair:fragmented||!moovBeforeMdat,moovBeforeMdat};
+}
+export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,onFailure}){
  const storageOps={
   start:key=>client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:'video/mp4'})),
   part:(key,uploadId,n,bytes)=>client.send(new UploadPartCommand({Bucket:bucket,Key:key,UploadId:uploadId,PartNumber:n,Body:bytes,ContentLength:bytes.length})),
   complete:(key,uploadId,parts)=>client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:key,UploadId:uploadId,MultipartUpload:{Parts:parts}})),
   abort:(key,uploadId)=>client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:key,UploadId:uploadId}))
  };
- const jobs=new Map();
+ const jobs=new Map(),queue=[];
  let active=null;
  function get(id){const job=jobs.get(String(id||''));return job?statusOf(job):null;}
- function start(entry){
-  if(active&&active.phase!=='failed'&&active.phase!=='completed')return{busy:true,job:statusOf(active)};
-  if(!entry?.id||!/\.mp4$/i.test(entry.key)||entry.status!=='ready')return{error:'movie_not_available'};
+ function findByFilm(id){
+  for(const job of jobs.values())if(job.filmId===id&&!['failed','completed'].includes(job.phase))return job;
+  return null;
+ }
+ function start(entry,{auto=false}={}){
+  if(!entry?.id||!/\.mp4$/i.test(entry.key)||!['ready','processing','processing_failed','review'].includes(entry.status))return{error:'movie_not_available'};
   if(!(entry.size>0&&entry.size<=MAX_SIZE))return{error:'file_too_large'};
-  const readyTools=mediaToolsReady();
-  if(!readyTools.ffmpeg||!readyTools.ffprobe)return{error:'media_tools_unavailable'};
-  const job={jobId:randomUUID(),filmId:entry.id,phase:'queued',percent:0,message:'Preparando una copia compatible sin recodificar.',createdAt:Date.now()};
-  jobs.set(job.jobId,job);active=job;
-  while(jobs.size>JOBS_LIMIT)jobs.delete(jobs.keys().next().value);
+  const existing=findByFilm(entry.id);if(existing)return{job:statusOf(existing)};
+  const tools=mediaToolsReady();
+  if(!tools.ffmpeg||!tools.ffprobe)return{error:'media_tools_unavailable'};
+  const job={jobId:randomUUID(),filmId:entry.id,phase:'queued',percent:0,message:'Esperando turno para verificar el MP4 en Cloudflare R2.',createdAt:Date.now(),auto};
+  jobs.set(job.jobId,job);
+  while(jobs.size>JOBS_LIMIT){const first=[...jobs].find(([,v])=>['completed','failed'].includes(v.phase));if(!first)break;jobs.delete(first[0]);}
+  queue.push({entry,job,auto});
+  pump();
+  return{job:statusOf(job)};
+ }
+ function pump(){
+  if(active||!queue.length)return;
+  const task=queue.shift(),{entry,job,auto}=task;
+  active=job;
   void (async()=>{
    let directory='',lastPhase='queued';
    try{
     const fs=await statfs(tmpdir());
     const free=Number(fs.bavail)*Number(fs.bsize);
-    if(free<entry.size*2.3+150*1024*1024)throw Error('No hay espacio temporal suficiente para una copia segura.');
+    if(free<entry.size*2.3+150*1024*1024)throw Error('No hay espacio temporal suficiente para preparar el MP4 de forma segura.');
     directory=await mkdtemp(join(tmpdir(),'nevix-remux-'));
     const input=join(directory,'source.mp4'),output=join(directory,'compatible.mp4');
-    job.phase='downloading';job.message='Descargando MP4 desde R2. No cierres esta pantalla.';console.log('NÉVIX R2 MP4 repair: phase=downloading size_mb='+Math.round(entry.size/1048576));
+    job.phase='downloading';job.percent=0;job.message='Analizando y descargando MP4 desde Cloudflare R2.';
+    console.log('NÉVIX R2 MP4 verification: phase=download auto='+auto+' size_mb='+Math.round(entry.size/1048576));
     const response=await client.send(new GetObjectCommand({Bucket:bucket,Key:entry.key}));
-    if(!response?.Body||typeof response.Body.pipe!=='function')throw Error('Cloudflare R2 no entregó el archivo original.');
+    if(!response?.Body||typeof response.Body.pipe!=='function')throw Error('Cloudflare R2 no entregó el archivo MP4.');
     let downloaded=0;
     const counter=new Transform({transform(chunk,_enc,cb){downloaded+=chunk.length;job.percent=Math.min(99,Math.floor(downloaded/entry.size*100));cb(null,chunk);}});
     await pipeline(response.Body,counter,createWriteStream(input,{flags:'wx'}));
     const local=await stat(input);
-    if(local.size!==entry.size)throw Error('La copia descargada llegó incompleta.');
-    job.phase='remuxing';lastPhase='remuxing';job.percent=1;job.message='Transformando MP4 fragmentado a MP4 estándar sin recodificar.';console.log('NÉVIX R2 MP4 repair: phase=remuxing');
+    if(local.size!==entry.size)throw Error('El MP4 llegó incompleto al servidor.');
+    job.phase='remuxing';lastPhase='verifying';job.percent=1;job.message='Verificando códecs H.264/AAC e índice MP4…';
     const before=await probe(input);
-    if(!(before.streams||[]).some(x=>x.codec_type==='video'&&x.codec_name==='h264'))throw Error('El video no usa H.264 y requiere otro procedimiento.');
-    await ffmpegRemux(input,output,pct=>{job.percent=Math.max(job.percent,pct);},Number(before.format?.duration)||0);
+    const video=(before.streams||[]).find(x=>x.codec_type==='video');
+    const audio=(before.streams||[]).find(x=>x.codec_type==='audio');
+    if(!video||video.codec_name!=='h264')throw Error('Este MP4 no usa video H.264; no se puede garantizar compatibilidad sin recodificar.');
+    if(audio&&audio.codec_name!=='aac')throw Error('El audio del MP4 no está en AAC; requiere una conversión diferente.');
+    const duration=Number(before.format?.duration);
+    if(!Number.isFinite(duration)||duration<2)throw Error('El MP4 no contiene una duración de video válida.');
+    const layout=await detectMp4Layout(input,local.size);
+    console.log('NÉVIX R2 MP4 verification: auto='+auto+' fragmented='+layout.fragmented+' needs_repair='+layout.needsRepair+' video=h264 audio='+(audio?.codec_name||'none'));
+    if(auto&&!layout.needsRepair){
+     job.phase='indexing';job.percent=99;job.message='El MP4 ya es compatible. Publicando sin crear otra copia.';
+     if(typeof finishWithoutRemux==='function')await finishWithoutRemux(entry);
+     job.phase='completed';job.percent=100;job.message='MP4 verificado, sin reparación necesaria.';
+     console.log('NÉVIX R2 MP4 verification completed: auto=true remuxed=false');
+     return;
+    }
+    lastPhase='remuxing';job.phase='remuxing';job.percent=1;job.message='Reorganizando el MP4 sin recodificar ni perder calidad.';
+    console.log('NÉVIX R2 MP4 repair: phase=remuxing auto='+auto);
+    await ffmpegRemux(input,output,pct=>{job.percent=Math.max(job.percent,pct);},duration);
     const after=await probe(output);
-    if(!validateMedia(before,after))throw Error('La conversión no pasó la comparación de pistas y duración.');
+    if(!validateMedia(before,after))throw Error('La versión reparada no pasó la comparación de duración y calidad.');
     const ready=await stat(output);
-    if(ready.size<1024||ready.size>MAX_SIZE)throw Error('La copia resultante tiene un tamaño inválido.');
+    if(ready.size<1024||ready.size>MAX_SIZE)throw Error('La copia MP4 tiene un tamaño incorrecto.');
+    const readyLayout=await detectMp4Layout(output,ready.size);
+    if(readyLayout.needsRepair)throw Error('FFmpeg no generó un contenedor MP4 estándar.');
     const filename=String(entry.title||'pelicula').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 -]/g,'').replace(/\s+/g,'.').slice(0,85)||'pelicula';
     const stamp=entry.year&&/^(19|20)\d{2}$/.test(String(entry.year))?'.'+entry.year:'';
     const key='peliculas/'+Date.now()+'-'+randomUUID()+'-'+filename+stamp+'.mp4';
-    job.phase='uploading';lastPhase='uploading';job.percent=0;job.message='Guardando MP4 compatible en Cloudflare R2.';console.log('NÉVIX R2 MP4 repair: phase=uploading size_mb='+Math.round(ready.size/1048576));
+    job.phase='uploading';lastPhase='uploading';job.percent=0;job.message='Guardando versión MP4 compatible en Cloudflare R2.';
+    console.log('NÉVIX R2 MP4 repair: phase=uploading size_mb='+Math.round(ready.size/1048576));
     await multipartFile(client,bucket,storageOps,key,output,ready.size,pct=>{job.percent=Math.max(job.percent,pct);});
-    job.phase='indexing';lastPhase='indexing';job.percent=0;job.message='Actualizando el catálogo y conservando el MP4 original.';console.log('NÉVIX R2 MP4 repair: phase=indexing');
+    job.phase='indexing';lastPhase='indexing';job.percent=0;job.message='Publicando MP4 compatible y conservando el archivo original.';
     await finalize(entry,key,ready.size);
-    job.phase='completed';job.percent=100;job.message='Copia MP4 estándar lista. Abre Películas y actualiza el catálogo.';
-    console.log('NÉVIX R2 MP4 repair completed: original_preserved=true size_mb='+Math.round(ready.size/1048576));
+    job.phase='completed';job.percent=100;job.message='MP4 compatible y verificado. El original se conserva como respaldo.';
+    console.log('NÉVIX R2 MP4 repair completed: auto='+auto+' original_preserved=true size_mb='+Math.round(ready.size/1048576));
    }catch(e){
     job.phase='failed';job.message=String(e?.message||'No se pudo preparar el archivo.').slice(0,230);
-    console.error('NÉVIX R2 MP4 repair failed: at='+lastPhase+' type='+String(e?.name||'error')+' code='+String(e?.code||'none').slice(0,24)+' http='+String(e?.$metadata?.httpStatusCode||'none'));
+    console.error('NÉVIX R2 MP4 verification failed: stage='+lastPhase+' auto='+auto+' type='+String(e?.name||'error')+' code='+String(e?.code||'none').slice(0,22));
+    if(auto&&typeof onFailure==='function'){
+     try{await onFailure(entry,job.message);}catch(err){console.error('NÉVIX R2 MP4 failure status save error: '+String(err?.name||'error'));}
+    }
    }finally{
     if(directory){try{await rm(directory,{recursive:true,force:true});}catch(_){}}
     if(active?.jobId===job.jobId)active=null;
+    pump();
    }
   })();
-  return{job:statusOf(job)};
  }
- return{get,start};
+ return{get,start,findByFilm:filmId=>{const job=findByFilm(filmId);return job?statusOf(job):null;}};
 }
