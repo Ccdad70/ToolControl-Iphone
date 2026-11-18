@@ -1,4 +1,5 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
+import { createPrivateUploads } from './private-uploads.mjs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -40,17 +41,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  // EU does not currently support the private browser upload/CORS workflow.
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
- const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
- let catalog=null,cacheUntil=0,running=null,corsUntil=0;
- async function ensureBrowserCors(){
-  if(Date.now()<corsUntil)return;
-  // Restrict browser uploads to NÉVIX, without making the bucket public.
-  await client.send(new PutBucketCorsCommand({Bucket:bucket,CORSConfiguration:{CORSRules:[{
-   AllowedOrigins:[origin],AllowedMethods:['GET','HEAD','PUT'],
-   AllowedHeaders:['*'],ExposeHeaders:['ETag','Content-Length','Accept-Ranges','Content-Range'],MaxAgeSeconds:1800
-  }]}}));
-  corsUntil=Date.now()+3600000;
- }
+ const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
+ let catalog=null,cacheUntil=0,running=null;
  async function telnyxSignedUrl(key,ttl){
   // Use Telnyx's own presigned-token API, never the AWS SDK presigner.
   const path='/v2/storage/buckets/'+encodeURIComponent(bucket)+'/'+encodeURIComponent(key)+'/presigned_url';
@@ -64,7 +56,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   }
   let data;
   try{data=await response.json();}catch(_){throw {status:502,error:'telnyx_invalid_response'};}
-  const signed=string(data?.content?.presigned_url);
+  const signed=string(data?.data?.presigned_url||data?.content?.presigned_url);
   let parsed;
   try{parsed=new URL(signed);}catch(_){}
   const host=parsed?.hostname||'';
@@ -150,6 +142,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   })().finally(()=>{running=null;});
   return running;
  }
+ const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:()=>sync(true)}):null;
  async function handle(req,res,url){
   try{
    if(url.pathname==='/api/private/status'){
@@ -174,22 +167,12 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{url:signed,expiresIn:3600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
+   if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
     const rows=await sync(true);
     return reply(res,200,{items:rows.map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''})),ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready').length});
    }
-   if(url.pathname==='/api/private/upload'&&req.method==='POST'){
-    const args=await body(req);
-    const original=string(args.name),size=Number(args.size);
-    const ext=original.match(/\.(mp4|webm)$/i);
-    if(!ext||!Number.isSafeInteger(size)||size<=0||size>MAX_UPLOAD)return reply(res,400,{error:'invalid_file',message:'Sube un MP4 o WebM de hasta 5 GB. Convierte MKV a MP4 antes de subirlo.'});
-    const safe=original.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,150);
-    const key=PREFIX+Date.now()+'-'+randomUUID()+'-'+safe;
-    const type=ext[1].toLowerCase()==='webm'?'video/webm':'video/mp4';
-    await ensureBrowserCors();
-    const signed=await telnyxSignedUrl(key,7200);
-    return reply(res,200,{uploadUrl:signed,method:'PUT',contentType:type,expiresIn:7200,keyHint:key.split('/').pop()});
-   }
+   if(url.pathname==='/api/private/upload')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV para subir películas con el nuevo sistema seguro.'});
    if(url.pathname==='/api/private/sync'&&req.method==='POST'){
     const rows=await sync(true);
     return reply(res,200,{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready').length});
@@ -222,15 +205,28 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(family&&family===admin)issues.push('FAMILY_AND_ADMIN_SAME');
    return {ok:false,reason:'incomplete_env',issues};
   }
+  let probeKey='',uploadId='',completed=false;
   try{
-   // Read-only check against the selected Telnyx bucket; no object or settings are changed.
    await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
-   return {ok:true,reason:'bucket_access_ok'};
+   // Verify multipart write + cleanup with a unique test object, never touch movies.
+   probeKey='nevix-meta/.nevix-probe-'+randomUUID()+'.bin';
+   const payload=Buffer.from('NEVIX-MULTIPART-CONNECTION-TEST');
+   const start=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:probeKey,ContentType:'application/octet-stream'}));
+   uploadId=start.UploadId;
+   if(!uploadId)throw {name:'MissingUploadId'};
+   const part=await client.send(new UploadPartCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,PartNumber:1,Body:payload,ContentLength:payload.length}));
+   if(!part.ETag)throw {name:'MissingPartETag'};
+   await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,MultipartUpload:{Parts:[{PartNumber:1,ETag:part.ETag}]}}));
+   completed=true;
+   return {ok:true,reason:'bucket_read_and_multipart_write_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
-   const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
-   console.error('NÉVIX Telnyx read-only check: http='+String(http||'unknown')+' category='+reason);
+   const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'multipart_or_storage_error';
+   console.error('NÉVIX Telnyx probe: http='+String(http||'unknown')+' category='+reason+' stage='+(uploadId?'multipart':'list_or_start'));
    return {ok:false,reason};
+  }finally{
+   if(uploadId&&!completed){try{await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId}));}catch(_){}}
+   if(probeKey){try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:probeKey}));}catch(_){}}
   }
  }
  return {handle,configured,checkConnection};
