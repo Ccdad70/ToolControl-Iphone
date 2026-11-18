@@ -24,8 +24,11 @@ Conserva los códigos actuales de `NEVIX_FAMILY_ACCESS_CODE` y `NEVIX_PRIVATE_AD
 
 **Recomendación de archivo:** MP4 con video H.264 (AVC), audio AAC, y cabecera de inicio rápido (`faststart`). La extensión .mp4, por sí sola, no garantiza la compatibilidad con Android. Esta versión **reorganiza automáticamente el contenedor cuando es necesario, pero no cambia códecs ni recodifica**. Los archivos HEVC/H.265 u otros audios distintos de AAC pueden requerir una conversión externa y no se habilitan automáticamente.
 
+## Corregir título, año o portada de una película
+En Administración, entra con el código privado y pulsa **Gestionar títulos, portadas y películas**. Localiza la película disponible, selecciona **Editar título y portada**, escribe el título correcto y el año, y pulsa **Buscar portada correcta**. Se muestra una vista previa de TMDB (con el título/año encontrado). Verifica la imagen y pulsa **Guardar título y portada**. La película se actualiza en el catálogo sin volver a subir el archivo ni modificar su copia en R2. La búsqueda exige coincidencia de título y año aproximado; si no se encuentra, comprueba el título original o el nombre internacional.
+
 ## Borrar películas
-En Administración, introduce el código del servidor y pulsa **Administrar y eliminar películas de R2**. La lista distingue las copias disponibles, las pendientes de verificación y los respaldos. Cada botón **Eliminar** borra un solo archivo real de R2 y requiere escribir **ELIMINAR**. Si una película tiene una versión reparada y un respaldo, elimina ambos por separado si deseas liberar todo el almacenamiento. Esta acción es irreversible. No se borran películas al modificar código o al limpiar la caché.
+En Administración, introduce el código del servidor y pulsa **Gestionar títulos, portadas y películas**. La lista distingue las copias disponibles, las pendientes de verificación y los respaldos. Cada botón **Eliminar** borra un solo archivo real de R2 y requiere escribir **ELIMINAR**. Si una película tiene una versión reparada y un respaldo, elimina ambos por separado si deseas liberar todo el almacenamiento. Esta acción es irreversible. No se borran películas al modificar código o al limpiar la caché.
 
 ## Verificación
 - Al iniciar Render, buscar en Logs `NÉVIX R2 readiness: multipart=true`.
