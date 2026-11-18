@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, CopyObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -256,6 +256,13 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
    stage='small_put';
    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
+   try{
+    const copy=await client.send(new CopyObjectCommand({Bucket:bucket,Key:singleKey,CopySource:encodeURIComponent(bucket)+'/'+singleKey.split('/').map(encodeURIComponent).join('/'),MetadataDirective:'REPLACE',ContentType:'video/mp4'}));
+    const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:singleKey}));
+    console.log('NÉVIX Telnyx MIME metadata probe: copy_ok='+Boolean(copy?.CopyObjectResult)+' mime='+String(head.ContentType||'').slice(0,50));
+   }catch(copyErr){
+    console.log('NÉVIX Telnyx MIME metadata probe: copy_failed http='+String(copyErr?.$metadata?.httpStatusCode||'unknown')+' type='+String(copyErr?.name||'Unknown').slice(0,45));
+   }
    stage='stream_put';
    // Keep the routine startup probe small; a separate 8 MiB transfer was verified successfully.
    const content=Buffer.from('NEVIX-STREAM-TEST');
