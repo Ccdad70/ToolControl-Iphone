@@ -1,51 +1,34 @@
-NÉVIX TV / CONFIGURACIÓN CLOUDFLARE R2
+# NÉVIX TV — Cloudflare R2 (único almacenamiento de películas)
 
-OBJETIVO
-Las películas privadas aparecen en la sección Películas, sin menú separado. Los archivos residen en un bucket R2 privado.
+## Configurar Cloudflare
+1. Entra en https://dash.cloudflare.com/ y abre **R2 Object Storage**.
+2. Crea un bucket **privado**, por ejemplo `nevix-movies`.
+3. En **Manage R2 API Tokens**, crea credenciales S3 con permisos **Object Read & Write** limitados a ese bucket. Apunta el **Account ID**, **Access Key ID** y **Secret Access Key**.
+4. No publiques el bucket; no necesitas dominio público ni reglas CORS. Las películas viajan del navegador al backend por bloques, y la reproducción se sirve con una ruta privada de NÉVIX.
 
-PASO 1 — CLOUDFLARE
-1. Abre https://dash.cloudflare.com/ y activa R2 Object Storage.
-2. Crea un bucket privado, por ejemplo nevix-peliculas-personal.
-3. No habilites acceso público por r2.dev ni por dominio público.
-4. En la configuración CORS del bucket, añade una regla JSON:
-[
-  {
-    "AllowedOrigins": ["https://nevix-tv-personal.onrender.com"],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["Content-Type"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
-5. Crea en R2 una credencial de API con Object Read & Write solo para el bucket. Guarda por separado Access Key ID, Secret Access Key y Account ID. No los compartas ni añadas al repositorio.
+## Configurar Render
+Abre https://dashboard.render.com/web/srv-dbts2cjl550s7396frj0 y ve a **Environment**. Añade:
+- `R2_ACCOUNT_ID` — Account ID Cloudflare (32 caracteres hexadecimales).
+- `R2_BUCKET` — nombre exacto del bucket privado.
+- `R2_ACCESS_KEY_ID` — credencial S3 R2.
+- `R2_SECRET_ACCESS_KEY` — secreto S3 R2.
 
-PASO 2 — RENDER
-Abre https://dashboard.render.com/web/srv-dbts2cjl550s7396frj0 -> Environment. Añade:
-R2_ACCOUNT_ID: ID de tu cuenta Cloudflare.
-R2_BUCKET: Nombre exacto del bucket.
-R2_ACCESS_KEY_ID: Access Key ID de R2.
-R2_SECRET_ACCESS_KEY: Secret Access Key de R2.
-NEVIX_FAMILY_ACCESS_CODE: código secreto familiar de al menos 12 caracteres.
-NEVIX_PRIVATE_ADMIN_KEY: código distinto de administración de al menos 16 caracteres.
-No modifiques las claves Watchmode o TMDB ya existentes. Guarda y confirma que el servidor vuelva a estar LIVE.
+Conserva los códigos actuales de `NEVIX_FAMILY_ACCESS_CODE` y `NEVIX_PRIVATE_ADMIN_KEY`, además de `WATCHMODE_API_KEY` y `TMDB_API_KEY`; no los cambies. **Nunca pegues secretos en este chat ni en GitHub**.
 
-PASO 3 — SUBIR Y REPRODUCIR
-1. En NÉVIX abre Panel privado -> Servidor privado de películas.
-2. Introduce la clave administrativa y elige un MP4 (H.264/AAC recomendado) o WebM inferior a 5 GB.
-3. Pulsa Subir película. El archivo se envía directamente del navegador a R2 usando un enlace firmado temporal.
-4. NÉVIX escanea automáticamente las películas en el prefijo peliculas/, identifica título/año y busca la portada en TMDB.
-5. Si hay coincidencia exacta, aparece en Películas. Si no, queda pendiente de revisión y no se mostrará un póster incorrecto.
-6. En la PC de tu esposa, pulsa el candado del menú superior e introduce el código familiar; las películas autorizadas aparecen en la sección Películas y pueden reproducirse directamente.
+## Uso
+1. En NÉVIX entra en Administración y elige un archivo **.mp4** de hasta 5 GiB (exclusivo MP4).
+2. La app inicia una sesión privada. El navegador envía **bloques de 8 MiB** a la API en Render, que firma cada parte y la guarda en Cloudflare R2. El código reintenta fallos transitorios y comprueba el tamaño final.
+3. Una vez cargado, la app busca título y año para relacionarlo con la portada de TMDB. Si no encuentra coincidencia, entra en **Revisar pendientes**.
+4. El acceso familiar permite reproducir las películas en el reproductor de NÉVIX. El servidor entrega un enlace interno con vencimiento y responde a solicitudes `Range`; no expone las credenciales de R2 ni hace público el bucket.
 
-También puedes subir MP4 por el panel de Cloudflare dentro de la carpeta peliculas/ y usar Revisar nuevas películas en el panel de NÉVIX.
+**Recomendación de archivo:** MP4 con video H.264 (AVC), audio AAC, y cabecera de inicio rápido (`faststart`). La extensión .mp4, por sí sola, no garantiza la compatibilidad con Android. Esta versión no recodifica automáticamente.
 
-RESTRICCIONES Y SEGURIDAD
-- Solo alojes películas que tengas autorización para almacenar y transmitir.
-- El PIN local es independiente de las claves familiares y administrativas del servidor.
-- El servidor no convierte automáticamente MKV; convierte previamente a MP4 H.264/AAC para reproducción amplia.
-- Los archivos de más de 5 GB requieren subida multipartes, aún no implementada.
-- No se garantiza que todos los archivos MP4 tengan códecs compatibles.
-- Los enlaces privados temporales pueden ser usados por cualquiera que los tenga hasta su vencimiento, por lo que no debes compartirlos.
-- R2 puede cobrar por almacenamiento y operaciones.
-- Tu bucket debe permanecer privado y los tokens limitados al bucket.
-- Las credenciales deben introducirse directamente en Render, nunca en ChatGPT/GitHub.
+## Verificación
+- Al iniciar Render, buscar en Logs `NÉVIX R2 readiness: multipart=true`.
+- Desde la web, en Administración, confirmar `Cloudflare R2 está conectado y permite subir MP4`.
+- Subir primero un MP4 pequeño y reproducirlo en Samsung; después probar el archivo de tamaño real.
+- Verificar listado, identificación de portada, acceso familiar, reproducción, `Range`, error de credenciales y visualización de progreso.
+- Al hacer cambios: desplegar la rama aislada `nevix-tv-live` con `clearCache=true` en Render. La web usa headers `no-store` y un service worker que elimina cachés previas.
+
+## Notas sobre el proveedor anterior
+NÉVIX ya no requiere ni lee secretos, URLs ni archivos del almacenamiento anterior. Los archivos antiguos no se trasladan; el usuario sube nuevos MP4 a R2. Eliminar los datos históricos y cancelar la facturación del proveedor anterior requiere actuar en su portal. Eliminar claves en Render no cancela una suscripción externa.
