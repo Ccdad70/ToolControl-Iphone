@@ -258,47 +258,24 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(family&&family===admin)issues.push('FAMILY_AND_ADMIN_SAME');
    return {ok:false,reason:'incomplete_env',issues};
   }
-  let probeKey='',uploadId='',completed=false,probeStage='list';
+  let stage='list';
+  const singleKey='nevix-meta/.single-probe-'+randomUUID()+'.bin';
+  const streamKey='nevix-meta/.stream-probe-'+randomUUID()+'.bin';
   try{
    await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
-   // Verify multipart write + cleanup with a unique test object, never touch movies.
-   probeKey='nevix-meta/.nevix-probe-'+randomUUID()+'.bin';
-   probeStage='create_multipart';
-   probeStage='put_object';
-   const singleKey='nevix-meta/.single-probe-'+randomUUID()+'.bin';
-   try{
-    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
-   }finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:singleKey}));}catch(_){}}
-   probeStage='raw_put_object';
-   const rawKey='nevix-meta/.raw-put-probe-'+randomUUID()+'.bin';
-   try{await rawUploadPart(rawKey,null,0,(async function*(){yield Buffer.from('NEVIX-RAW-PUT-TEST');})(),19);}
-   finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:rawKey}));}catch(_){}}
-   probeStage='create_multipart';
-   const payload=Buffer.alloc(6*1024*1024,0);
-   const start=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:probeKey,ContentType:'application/octet-stream'}));
-   uploadId=start.UploadId;
-   if(!uploadId)throw {name:'MissingUploadId'};
-   probeStage='upload_part';
-   let part;
-   try{part=await client.send(new UploadPartCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,PartNumber:1,Body:payload,ContentLength:payload.length}));}
-   catch(e){
-    console.log('NÉVIX Telnyx SDK UploadPart rejected http='+String(e?.$metadata?.httpStatusCode||'unknown')+'; testing provider-native request.');
-    probeStage='raw_upload_part';
-    part=await rawUploadPart(probeKey,uploadId,1,payload);
-   }
-   if(!part.ETag)throw {name:'MissingPartETag'};
-   probeStage='complete_multipart';
-   await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,MultipartUpload:{Parts:[{PartNumber:1,ETag:part.ETag}]}}));
-   completed=true;
-   return {ok:true,reason:'bucket_read_and_multipart_write_ok'};
+   stage='small_put';
+   await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
+   stage='stream_put';
+   const content=Buffer.from('NEVIX-STREAM-TEST');
+   await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
+   return {ok:true,reason:'bucket_read_and_stream_write_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
-   const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'multipart_or_storage_error';
-   console.error('NÉVIX Telnyx probe: http='+String(http||'unknown')+' category='+reason+' stage='+probeStage);
+   const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
+   console.error('NÉVIX Telnyx probe: http='+String(http||'unknown')+' category='+reason+' stage='+stage);
    return {ok:false,reason};
   }finally{
-   if(uploadId&&!completed){try{await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId}));}catch(_){}}
-   if(probeKey){try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:probeKey}));}catch(_){}}
+   for(const key of [singleKey,streamKey]){try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:key}));}catch(_){}}
   }
  }
  return {handle,configured,checkConnection};
