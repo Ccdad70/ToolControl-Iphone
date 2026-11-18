@@ -176,7 +176,12 @@ const server=http.createServer(async(req,res)=>{
   send(res,404,{error:'not_found'});
  }catch(e){send(res,e.status||502,{error:e.error||'unavailable',message:e.message||'No se pudo consultar el catálogo'});}
 });
-server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY)));
+server.listen(PORT,'0.0.0.0',()=>{
+ console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY));
+ void privateFilms.checkConnection().then(result=>{
+  console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason);
+ }).catch(()=>console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected=false reason=probe_failed'));
+});
 
 async function checkCatalogHealth(){
  if(!KEY)return;
