@@ -211,5 +211,18 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    return reply(res,e.status||502,{error:e.error||'storage_unavailable',message:e.message&&e.status?e.message:'No se pudo consultar Telnyx Storage. Revisa el bucket, la región, el CORS y las credenciales.'});
   }
  }
- return {handle,configured};
+ async function checkConnection(){
+  if(!configured)return {ok:false,reason:'incomplete_env'};
+  try{
+   // Read-only check against the selected Telnyx bucket; no object or settings are changed.
+   await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
+   return {ok:true,reason:'bucket_access_ok'};
+  }catch(e){
+   const http=Number(e?.$metadata?.httpStatusCode)||0;
+   const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
+   console.error('NÉVIX Telnyx read-only check: http='+String(http||'unknown')+' category='+reason);
+   return {ok:false,reason};
+  }
+ }
+ return {handle,configured,checkConnection};
 }
