@@ -57,7 +57,19 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+(uploadId?'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId):'');
   const byteSize=Number(declaredSize??body.length);
   const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':contentType,'Content-Length':String(byteSize)},body,duplex:'half',signal:AbortSignal.timeout(3600000)});
-  if(!response.ok)throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
+  if(!response.ok){
+   let code='unknown',contentType='';
+   if(uploadId){
+    contentType=String(response.headers.get('content-type')||'').slice(0,32);
+    try{
+     const body=String(await response.text()).slice(0,2048);
+     const extracted=body.match(/<Code>([^<]{1,80})<\/Code>/)?.[1]||body.match(/"code"\s*:\s*"([^"]{1,80})"/)?.[1]||'';
+     if(/^[A-Za-z0-9_ -]{1,80}$/.test(extracted))code=extracted;
+    }catch(_){}
+    console.error('NÉVIX multipart part HTTP='+response.status+' code='+code+' mime='+contentType+' part='+partNumber);
+   }
+   throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
+  }
   const ETag=String(response.headers.get('etag')||'');
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
   return {ETag};
