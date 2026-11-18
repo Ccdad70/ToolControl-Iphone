@@ -308,7 +308,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      return reply(res,400,{error:'invalid_metadata',message:'Escribe un título válido y un año de cuatro cifras.'});
     const found=await tmdbSearchPoster(requestedTitle,requestedYear,'movie');
     if(!found?.image)return reply(res,422,{error:'no_exact_match',message:'No se encontró una portada que coincida exactamente con el título y el año. Comprueba la escritura o prueba con el título original.'});
-    return reply(res,200,{ok:true,id:entry.id,title:requestedTitle,year:requestedYear,image:found.image,description:found.overview||'',currentTitle:entry.title});
+    return reply(res,200,{ok:true,id:entry.id,title:requestedTitle,year:requestedYear,image:found.image,description:found.overview||'',matchedTitle:found.matchedTitle||requestedTitle,matchedYear:found.matchedYear||'',currentTitle:entry.title});
    }
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
