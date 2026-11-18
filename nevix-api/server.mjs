@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { createPrivateFilmService } from './private-films.mjs';
+import { mediaToolsReady } from './private-remux-r2.mjs';
 const PORT=Number(process.env.PORT||10000);
 const KEY=String(process.env.WATCHMODE_API_KEY||'').trim();
 const TMDB_KEY=String(process.env.TMDB_API_KEY||'').trim();
@@ -186,6 +187,8 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(PORT,'0.0.0.0',()=>{
  console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY));
+ const repairTools=mediaToolsReady();
+ console.log('NÉVIX R2 MP4 repair readiness: ffmpeg='+repairTools.ffmpeg+' ffprobe='+repairTools.ffprobe);
  void privateFilms.checkConnection().then(result=>{
   console.log('NÉVIX Cloudflare R2 storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
   if(result.ok)return privateFilms.checkPlayback();
