@@ -1701,6 +1701,8 @@ function homePreviewSource(){
 }
 let homePreviewId=null,homePreviewActive=false,homePreviewHls=null;
 function stopHomePreview(){
+ const expandedPreview=document.querySelector('.cinema-preview.nevix-preview-expanded');
+ if(expandedPreview){expandedPreview.classList.remove('nevix-preview-expanded');document.documentElement.classList.remove('nevix-theater-lock');document.body.classList.remove('nevix-theater-lock');}
  if(homePreviewHls){try{homePreviewHls.destroy();}catch(_){ }homePreviewHls=null;}
  const video=document.getElementById('home-mini-video');
  if(video){try{video.pause();video.removeAttribute('src');video.load();}catch(_){}}
@@ -1721,7 +1723,7 @@ function mountHomePreview(){
   return;
  }
  if(!/^https:\/\//i.test(String(item.url||''))||!item.browserPlayable){homePreviewFailure('Este canal aún no tiene una señal compatible.');return;}
- box.innerHTML='<video id="home-mini-video" class="cinema-preview-video" controls muted autoplay playsinline preload="auto"></video>';
+ box.innerHTML='<video id="home-mini-video" class="cinema-preview-video" controls controlsList="nofullscreen" muted autoplay playsinline preload="auto"></video>';
  const video=document.getElementById('home-mini-video');
  if(!video)return;
  video.addEventListener('error',()=>homePreviewFailure('No se puede reproducir este canal en la vista previa.'),{once:true});
