@@ -51,7 +51,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   // Never include the API key in a URL, a log, or a browser response.
   const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
   const date=stamp.slice(0,8);
-  const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature='+('0'.repeat(64));
+  const signedHeaders=uploadId?'content-length;content-type;host;x-amz-date':'host;x-amz-date';
+  const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders='+signedHeaders+', Signature='+('0'.repeat(64));
   const objectKey=key.split('/').map(encodeURIComponent).join('/');
   const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+(uploadId?'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId):'');
   const byteSize=Number(declaredSize??body.length);
