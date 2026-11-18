@@ -41,6 +41,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',
   credentials:{accessKeyId,secretAccessKey},maxAttempts:3}):null;
  let catalog=null,cacheUntil=0,running=null,uploadReady=false;
+ const videoProbeCount=new Map();
  const VIDEO_TOKEN_TTL_MS=30*60*1000;
  const videoSig=(id,expires)=>createHmac('sha256',secretAccessKey+':'+admin+':'+family).update('NEVIX-VIDEO-V1:'+id+':'+expires).digest('hex');
  function signedVideoPath(id){
@@ -158,6 +159,11 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const headers={'content-type':type,'accept-ranges':'bytes','content-disposition':'inline','cache-control':'private, no-store','access-control-allow-origin':origin,'access-control-expose-headers':'Content-Range, Content-Length, Accept-Ranges, Content-Type','x-content-type-options':'nosniff'};
     if(media.ContentRange)headers['content-range']=String(media.ContentRange);
     if(Number.isSafeInteger(Number(media.ContentLength)))headers['content-length']=String(media.ContentLength);
+    const logged=videoProbeCount.get(id)||0;
+    if(logged<5){
+     console.log('NÉVIX private MP4 GET: http='+(media.ContentRange?206:200)+' range_requested='+(range?'yes':'no')+' range_delivered='+(media.ContentRange?'yes':'no')+' bytes='+String(media.ContentLength||'unknown'));
+     videoProbeCount.set(id,logged+1);
+    }
     res.writeHead(media.ContentRange?206:200,headers);
     const source=media.Body;
     source.once('error',()=>{console.error('NÉVIX private video proxy read failed.');try{res.destroy();}catch(_){}});
@@ -247,5 +253,36 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:key}));}catch(_){}
   }
  }
- return {handle,configured,checkConnection};
+ async function checkPlayback(){
+  if(!configured)return;
+  let stage='catalog';
+  try{
+   const movies=await sync(true);
+   const film=movies.find(x=>x.status==='ready'&&SUPPORTED.test(x.key));
+   if(!film){console.log('NÉVIX MP4 playback scan: no_ready_film');return;}
+   const fileSize=Number(film.size);
+   if(!Number.isSafeInteger(fileSize)||fileSize<32){console.log('NÉVIX MP4 playback scan: invalid_size');return;}
+   let offset=0,atomCount=0,moovAt=-1,mdatAt=-1,rangeSupported=true;
+   const boxes=[];
+   while(offset<fileSize&&atomCount++<16){
+    stage='read_range';
+    const end=Math.min(fileSize-1,offset+63);
+    const response=await client.send(new GetObjectCommand({Bucket:bucket,Key:film.key,Range:'bytes='+offset+'-'+end}));
+    const raw=Buffer.from(await response.Body.transformToByteArray());
+    if(!response.ContentRange||raw.length<8){rangeSupported=false;break;}
+    const type=raw.toString('latin1',4,8);
+    let length=raw.readUInt32BE(0);
+    if(length===1){if(raw.length<16)break;const large=raw.readBigUInt64BE(8);if(large>BigInt(Number.MAX_SAFE_INTEGER))break;length=Number(large);}
+    if(length===0)length=fileSize-offset;
+    if(length<8||length>fileSize-offset)break;
+    if(type==='moov')moovAt=offset;
+    if(type==='mdat')mdatAt=offset;
+    boxes.push(type+'@'+Math.round(offset/1048576)+'MiB');
+    offset+=length;
+    if(type==='moov'&&mdatAt>=0)break;
+   }
+   console.log('NÉVIX MP4 playback scan: size_mb='+Math.round(fileSize/1048576)+' range='+rangeSupported+' moov='+(moovAt>=0?(mdatAt>=0&&moovAt>mdatAt?'after_mdat':'before_mdat'):'not_found')+' atoms='+boxes.join(',').slice(0,180));
+  }catch(err){console.error('NÉVIX MP4 playback scan failed: stage='+stage+' reason='+String(err?.name||'Error').slice(0,42)+' http='+String(err?.$metadata?.httpStatusCode||'none'));}
+ }
+ return {handle,configured,checkConnection,checkPlayback};
 }
