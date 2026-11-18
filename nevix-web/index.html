@@ -2310,12 +2310,41 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
   }catch(_){}
   return 0;
  };
+ const readBox=(bytes,position)=>{
+  if(position+8>bytes.length)return null;
+  const view=new DataView(bytes.buffer,bytes.byteOffset+position);
+  let size=view.getUint32(0),header=8;
+  const type=String.fromCharCode(...bytes.subarray(position+4,position+8));
+  if(size===1){
+   if(position+16>bytes.length)return null;
+   const upper=view.getUint32(8),lower=view.getUint32(12);
+   size=upper*4294967296+lower;
+   header=16;
+  }
+  if(!size||!Number.isSafeInteger(size)||size<header||size>20*1024*1024)
+   throw Error('El contenedor MP4 tiene un segmento demasiado grande o inválido.');
+  return {type,size,end:position+size,complete:position+size<=bytes.length};
+ };
+ const findInitEnd=bytes=>{
+  let offset=0,seenFtyp=false;
+  for(let n=0;n<24&&offset<bytes.length;n++){
+   const box=readBox(bytes,offset);
+   if(!box||!box.complete)throw Error('No se recibió completa la cabecera inicial del MP4.');
+   if(box.type==='ftyp')seenFtyp=true;
+   if(box.type==='moov'&&seenFtyp)return box.end;
+   if(box.type==='moof')throw Error('Falta la inicialización moov del video.');
+   offset=box.end;
+  }
+  throw Error('No se encontró la información de inicio del MP4.');
+ };
  const run=async()=>{
-  onStatus('Iniciando reproductor compatible…');
-  const first=await rangeFetch(0,CHUNK-1);
+  onStatus('Preparando el MP4 fragmentado…');
+  // Probe the initialization structure separately. Do not append partial media boxes.
+  const first=await rangeFetch(0,65535);
   const total=first.total;
-  if(!Number.isSafeInteger(total)||total<=CHUNK)throw Error('El archivo no tiene un tamaño válido.');
-  const mime=codecFromInit(first.bytes);
+  if(!Number.isSafeInteger(total)||total<65536)throw Error('El archivo no tiene un tamaño válido.');
+  const initEnd=findInitEnd(first.bytes);
+  const mime=codecFromInit(first.bytes.subarray(0,initEnd));
   if(!active)return;
   mediaSource=new MSE();
   objectUrl=URL.createObjectURL(mediaSource);
@@ -2325,32 +2354,67 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
   if(!active)return;
   sourceBuffer=mediaSource.addSourceBuffer(mime);
   sourceBuffer.mode='segments';
-  await append(first.bytes);
+  await append(first.bytes.slice(0,initEnd)); // ftyp + moov only
   offset=first.bytes.length;
-  onStatus('Preparando imagen y sonido…');
-  video.play().catch(e=>{if(e?.name==='NotAllowedError')onStatus('Pulsa reproducir para comenzar la película.');});
+  let carry=first.bytes.slice(initEnd);
+  let processed=0;
+  onStatus('Cargando los segmentos de imagen y sonido…');
+  const drain=async()=>{
+   let position=0,completedThrough=0,moofSeen=false,segments=[];
+   while(position<carry.length){
+    const box=readBox(carry,position);
+    if(!box||!box.complete)break;
+    if(box.type==='moof'){
+     if(moofSeen)throw Error('El MP4 contiene un fragmento incompleto.');
+     moofSeen=true;
+    }else if(box.type==='mdat'){
+     if(!moofSeen)throw Error('El MP4 contiene datos sin su encabezado moof.');
+     segments.push(carry.slice(completedThrough,box.end));
+     completedThrough=box.end;moofSeen=false;
+    }
+    position=box.end;
+   }
+   for(const bytes of segments){
+    if(!active)return;
+    await append(bytes);
+    processed+=bytes.length;
+   }
+   if(completedThrough)carry=carry.slice(completedThrough);
+  };
+  await drain();
+  if(!active)return;
+  const tryStart=()=>video.play().catch(e=>{
+   if(e?.name==='NotAllowedError')onStatus('Pulsa reproducir para comenzar la película.');
+  });
+  void tryStart();
   while(active&&offset<total){
-   if(bufferAhead()>50){await sleep(700);continue;}
-   if(sourceBuffer.updating){await sleep(80);continue;}
+   if(bufferAhead()>40){await sleep(400);continue;}
+   if(sourceBuffer.updating){await sleep(60);continue;}
+   // Keep memory bounded while retaining enough fragments for seeking backward.
    if(video.currentTime>75&&sourceBuffer.buffered.length){
     const cut=video.currentTime-35;
     if(sourceBuffer.buffered.start(0)<cut-15){
-     await new Promise((resolve,reject)=>{
+     await new Promise(resolve=>{
       sourceBuffer.addEventListener('updateend',resolve,{once:true});
-      try{sourceBuffer.remove(sourceBuffer.buffered.start(0),cut);}catch(e){reject(e);}
-     }).catch(()=>{});
+      try{sourceBuffer.remove(sourceBuffer.buffered.start(0),cut);}catch(_){resolve();}
+     });
     }
    }
    const part=await rangeFetch(offset,Math.min(total-1,offset+CHUNK-1));
    if(!active)return;
-   await append(part.bytes);
-   offset+=part.bytes.length;
-   // Do not burn paid bandwidth downloading a full movie if the browser
-   // has not accepted any media after the initial 18 MiB.
-   if(offset>=18*1024*1024&&video.buffered.length===0&&(Number(video.currentTime)||0)<0.1)
-    throw Error('El navegador no pudo interpretar los primeros fragmentos de este MP4. El archivo necesita remultiplexado a MP4 estándar.');
+   const joined=new Uint8Array(carry.length+part.bytes.length);
+   joined.set(carry,0);joined.set(part.bytes,carry.length);
+   carry=joined;offset+=part.bytes.length;
+   if(carry.length>24*1024*1024)throw Error('Un segmento MP4 sobrepasó el límite del reproductor.');
+   await drain();
+   if(!active)return;
+   if(offset>=18*1024*1024&&video.buffered.length===0&&video.currentTime<0.1)
+    throw Error('El navegador no pudo decodificar el MP4. Puede necesitar una conversión de contenedor, sin perder calidad.');
   }
-  if(active&&mediaSource.readyState==='open'&&!sourceBuffer.updating){try{mediaSource.endOfStream();}catch(_){}}
+  await drain();
+  if(active&&mediaSource.readyState==='open'&&!sourceBuffer.updating){
+   try{mediaSource.endOfStream();}catch(_){}
+  }
  };
  void run().catch(e=>{
   if(!active||e?.name==='AbortError')return;
@@ -2534,6 +2598,12 @@ function play(id,sourceIndex=0){
  video.addEventListener('playing',()=>{if(stopped)return;playing=true;if(it.privateMovie&&video.currentTime>0.1)video.closest('.player-shell')?.classList.add('nevix-video-ready');if(it.verifiedManifest){it.verifiedPlayback=true;}stopTimer();status.textContent=it.id==='nevix-hls-test'?'Prueba HLS reproduciendo. Motor: '+(engine||'video'):(it.sample?'Reproduciendo demostración original':it.kind==='live'?'▶ EN VIVO — motor '+(engine||'video'):'Reproduciendo video');if(details)details.hidden=true;});
  video.addEventListener('error',()=>{
    if(stopped)return;
+   if(it.privateMovie&&engine==='MP4 fragmentado'){
+    const code=Number(video.error?.code)||0;
+    if(privateMediaSession){privateMediaSession.cancel();privateMediaSession=null;}
+    stopAndReport('Android no pudo decodificar este MP4 fragmentado (error multimedia '+code+'). Puede requerir una conversión de contenedor sin pérdida de calidad.','MSE MediaError '+code);
+    return;
+   }
    if(it.privateMovie&&openPrivateFallback())return;
    if(it.privateMovie&&refreshPrivateAccess())return;
    const detail='video.error '+String(video.error?.code||'desconocido');
