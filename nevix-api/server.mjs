@@ -197,7 +197,7 @@ const server=http.createServer(async(req,res)=>{
 server.listen(PORT,'0.0.0.0',()=>{
  console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY));
  const repairTools=mediaToolsReady();
- console.log('NÉVIX R2 MP4 repair readiness: ffmpeg='+repairTools.ffmpeg+' ffprobe='+repairTools.ffprobe);
+ console.log('NÉVIX multimedia readiness: ffmpeg='+repairTools.ffmpeg+' ffprobe='+repairTools.ffprobe+' h264_encode='+repairTools.h264Encoder+' aac_encode='+repairTools.aacEncoder);
  void privateFilms.checkConnection().then(result=>{
   console.log('NÉVIX Cloudflare R2 storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
   if(result.ok){
