@@ -1,4 +1,4 @@
-import { GetObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat, statfs, open as openFile } from 'node:fs/promises';
 import { Transform } from 'node:stream';
@@ -34,8 +34,8 @@ async function withRetry(operation){
  }
  throw failure;
 }
-async function multipartUpload(client,bucket,key,size,getBuffer,onProgress=()=>{},chunkSize=MULTIPART_CHUNK){
- const created=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:'video/mp4'}));
+async function multipartUpload(client,bucket,storageOps,key,size,getBuffer,onProgress=()=>{},chunkSize=MULTIPART_CHUNK){
+ const created=await storageOps.start(key);
  const uploadId=created?.UploadId;
  if(!uploadId)throw Error('Telnyx no confirmó el inicio de la transferencia por partes.');
  let completed=false,bytesConfirmed=0;
@@ -46,14 +46,14 @@ async function multipartUpload(client,bucket,key,size,getBuffer,onProgress=()=>{
    const offset=(n-1)*chunkSize,amount=Math.min(chunkSize,size-offset);
    const data=await getBuffer(offset,amount);
    if(!Buffer.isBuffer(data)||data.length!==amount)throw Error('La copia local tiene una parte incompleta.');
-   const part=await withRetry(()=>client.send(new UploadPartCommand({Bucket:bucket,Key:key,UploadId:uploadId,PartNumber:n,Body:data,ContentLength:amount})));
+   const part=await withRetry(()=>storageOps.part(key,uploadId,n,data));
    if(!part?.ETag)throw Error('Telnyx no confirmó una parte de la película.');
    parts.push({ETag:part.ETag,PartNumber:n});
    bytesConfirmed+=amount;
    onProgress(Math.min(99,Math.floor(bytesConfirmed/size*100)));
   }
   try{
-   await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:key,UploadId:uploadId,MultipartUpload:{Parts:parts}}));
+   await storageOps.complete(key,uploadId,parts);
    completed=true;
   }catch(err){
    // The response may be interrupted even when Telnyx has assembled the object.
@@ -68,15 +68,15 @@ async function multipartUpload(client,bucket,key,size,getBuffer,onProgress=()=>{
   onProgress(99);
  }catch(err){
   if(!completed){
-   try{await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:key,UploadId:uploadId}));}catch(_){}
+   try{await storageOps.abort(key,uploadId);}catch(_){}
   }
   throw err;
  }
 }
-async function multipartFile(client,bucket,key,path,size,onProgress){
+async function multipartFile(client,bucket,storageOps,key,path,size,onProgress){
  const fd=await openFile(path,'r');
  try{
-  await multipartUpload(client,bucket,key,size,async(offset,amount)=>{
+  await multipartUpload(client,bucket,storageOps,key,size,async(offset,amount)=>{
    const buffer=Buffer.allocUnsafe(amount);
    let read=0;
    while(read<amount){
@@ -89,11 +89,11 @@ async function multipartFile(client,bucket,key,path,size,onProgress){
   },onProgress);
  }finally{await fd.close();}
 }
-export async function verifyMultipartStorage(client,bucket){
+export async function verifyMultipartStorage(client,bucket,storageOps){
  const key='nevix-meta/.multipart-probe-'+randomUUID()+'.bin';
  const chunkSize=5*1024*1024,extra=131072,size=chunkSize+extra;
  try{
-  await multipartUpload(client,bucket,key,size,async(offset,amount)=>Buffer.alloc(amount,offset===0?0x51:0x52),()=>{},chunkSize);
+  await multipartUpload(client,bucket,storageOps,key,size,async(offset,amount)=>Buffer.alloc(amount,offset===0?0x51:0x52),()=>{},chunkSize);
   return true;
  }finally{
   try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:key}));}catch(_){}
@@ -148,7 +148,7 @@ function validateMedia(input,output){
  const d1=Number(input.format?.duration),d2=Number(output.format?.duration);
  return Number.isFinite(d1)&&Number.isFinite(d2)&&d1>2&&Math.abs(d1-d2)<=Math.max(3,d1*0.002);
 }
-export function createPrivateRemux({client,bucket,finalize}){
+export function createPrivateRemux({client,bucket,storageOps,finalize}){
  const jobs=new Map();
  let active=null;
  function get(id){const job=jobs.get(String(id||''));return job?statusOf(job):null;}
@@ -189,7 +189,7 @@ export function createPrivateRemux({client,bucket,finalize}){
     const stamp=entry.year&&/^(19|20)\d{2}$/.test(String(entry.year))?'.'+entry.year:'';
     const key='peliculas/'+Date.now()+'-'+randomUUID()+'-'+filename+stamp+'.mp4';
     job.phase='uploading';lastPhase='uploading';job.percent=0;job.message='Guardando la copia compatible en tu bucket privado.';
-    await multipartFile(client,bucket,key,output,ready.size,pct=>{job.percent=Math.max(job.percent,pct);});
+    await multipartFile(client,bucket,storageOps,key,output,ready.size,pct=>{job.percent=Math.max(job.percent,pct);});
     job.phase='indexing';lastPhase='indexing';job.percent=0;job.message='Actualizando la película y conservando el original como respaldo.';
     await finalize(entry,key,ready.size);
     job.phase='completed';job.percent=100;job.message='Copia MP4 estándar lista. Abre Películas y actualiza el catálogo.';
