@@ -98,14 +98,14 @@ const statusOf=job=>({jobId:job.jobId,phase:job.phase,percent:job.percent,comple
 async function probe(path){
  return new Promise((resolve,reject)=>{
   execFile(FFPROBE_BIN,['-v','error','-show_entries',
-   'format=duration,format_name:stream=codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile',
+   'format=duration,format_name:stream=index,codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile:stream_disposition=attached_pic',
    '-of','json',path],{timeout:90000,maxBuffer:512*1024},(err,out)=>{
    if(err)return reject(Error('FFprobe no pudo analizar el contenedor. Comprueba que el archivo de video no esté dañado.'));
    try{resolve(JSON.parse(out));}catch(_){reject(Error('FFprobe devolvió datos multimedia inválidos.'));}
   });
  });
 }
-const firstVideo=p=>(p.streams||[]).find(x=>x.codec_type==='video');
+const firstVideo=p=>(p.streams||[]).find(x=>x.codec_type==='video'&&x.disposition?.attached_pic!==1);
 const firstAudio=p=>(p.streams||[]).find(x=>x.codec_type==='audio');
 const movieDuration=p=>Number(p.format?.duration||firstVideo(p)?.duration||firstAudio(p)?.duration)||0;
 const compatibleH264=p=>{
@@ -121,14 +121,14 @@ function conversionPlan(before,filename,layout){
  const stereoCopy=hasAudio&&audio.codec_name==='aac'&&channels>0&&channels<=2;
  const surround=hasAudio&&channels>=6;
  const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||hasAudio&&(!stereoCopy||surround);
- return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels};
+ return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels,videoIndex:video.index,audioIndex:audio?.index??null};
 }
 async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
  const args=['-hide_banner','-nostdin','-loglevel','error','-stats_period','2','-progress','pipe:2','-y','-threads','1','-i',input,
-  '-map','0:v:0'];
+  '-map','0:'+plan.videoIndex];
  if(plan.hasAudio){
-  args.push('-map','0:a:0');
-  if(plan.surround)args.push('-map','0:a:0');
+  args.push('-map','0:'+plan.audioIndex);
+  if(plan.surround)args.push('-map','0:'+plan.audioIndex);
  }
  if(plan.videoCopy)args.push('-c:v:0','copy');
  else args.push('-c:v:0','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-threads:v:0','1');
