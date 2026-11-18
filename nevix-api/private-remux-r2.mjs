@@ -18,8 +18,8 @@ export function mediaToolsReady(){
  const encoders=enabled?spawnSync(FFMPEG_BIN,['-hide_banner','-encoders'],{encoding:'utf8',timeout:6000,maxBuffer:512*1024}):null;
  const list=encoders?.status===0?String(encoders.stdout||''):'';
  return {ffmpeg:enabled,ffprobe:!ffprobe.error&&ffprobe.status===0,
-  h264Encoder:/^\\s*V[^\\n]*\\blibx264\\b/m.test(list),
-  aacEncoder:/^\\s*A[^\\n]*\\baac\\b/m.test(list)};
+  h264Encoder:/^\s*V[^\n]*\blibx264\b/m.test(list),
+  aacEncoder:/^\s*A[^\n]*\baac\b/m.test(list)};
 }
 
 const MAX_SIZE=6*1024*1024*1024;
