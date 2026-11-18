@@ -1943,11 +1943,39 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
  const headers={};
  if(code)headers[adminAccess?'X-Nevix-Admin-Key':'X-Nevix-Access-Code']=code;
  if(payload)headers['Content-Type']='application/json';
- const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(route.includes('/sync')||route.includes('/admin/catalog')?90000:30000),...(payload?{body:JSON.stringify(payload)}:{})});
- let result={};
- try{result=await response.json();}catch(_){}
- if(!response.ok)throw new Error(result.message||((response.status===401)?'Código de acceso incorrecto.':'No se pudo conectar con el servidor privado.'));
- return result;
+ const timeout=route.includes('/remux/start')?120000:route.includes('/sync')||route.includes('/admin/catalog')?90000:45000;
+ const attempts=method==='GET'?2:1;
+ for(let attempt=0;attempt<attempts;attempt++){
+  try{
+   const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(timeout),...(payload?{body:JSON.stringify(payload)}:{})});
+   let result={};
+   try{result=await response.json();}catch(_){}
+   if(!response.ok)throw new Error(result.message||((response.status===401||response.status===403)?'Código de acceso incorrecto o sin permisos.':'El servidor privado respondió con HTTP '+response.status+'.'));
+   return result;
+  }catch(error){
+   const networkError=['TypeError','TimeoutError','AbortError'].includes(String(error?.name||''));
+   if(networkError&&attempt+1<attempts){
+    await new Promise(resolve=>setTimeout(resolve,1800));
+    continue;
+   }
+   if(networkError)throw new Error((navigator.onLine?'No se pudo establecer conexión con la API privada de NÉVIX TV.':'Tu dispositivo parece estar sin conexión a internet.')+' Comprueba que el servidor Render esté disponible y vuelve a intentarlo. La película original permanece intacta.');
+   throw error;
+  }
+ }
+}
+async function privateWarmApi(update){
+ if(update)update('Conectando con NÉVIX TV en Render. Si el servidor está en reposo, puede tardar en despertar…');
+ try{
+  const response=await fetch(WATCHMODE_BACKEND+'/health',{method:'GET',cache:'no-store',signal:AbortSignal.timeout(90000)});
+  if(!response.ok)throw new Error('HTTP '+response.status);
+  const status=await response.json();
+  if(!status?.ok||!status?.privateStorage)throw new Error('El servidor privado de películas no está listo.');
+ }catch(error){
+  if(error?.name==='TypeError'||error?.name==='TimeoutError'||error?.name==='AbortError'){
+   throw new Error('No se pudo conectar con el servicio NÉVIX en Render. Prueba cambiar entre Wi-Fi y datos móviles, o recarga la aplicación. No necesitas volver a subir la película.');
+  }
+  throw error;
+ }
 }
 async function privateCheckStatus(){
  try{
@@ -2091,7 +2119,8 @@ async function privateRemuxAdmin(){
  if(btn)btn.disabled=true;
  const tell=s=>{if(status)status.textContent=s;};
  try{
-  tell('Buscando tus películas disponibles en el servidor…');
+  await privateWarmApi(tell);
+  tell('Conectado. Buscando tus películas disponibles en Telnyx…');
   const catalog=await privateRequest('/api/private/admin/catalog',key,true);
   const items=(catalog.items||[]).filter(x=>x.status==='ready');
   if(!items.length)throw Error('Todavía no hay películas listas para preparar.');
