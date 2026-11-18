@@ -1,7 +1,7 @@
 import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 
-const CHUNK_SIZE=8*1024*1024;
+const CHUNK_SIZE=5*1024*1024;
 const MAX_SIZE=5*1024*1024*1024-1;
 const MAX_SESSIONS=3;
 const MAX_AGE=4*60*60*1000;
@@ -54,8 +54,16 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
-    active.set(id,{key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false});
+    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false});
+    console.log('NÉVIX R2 upload start: size_mb='+Math.round(size/1048576)+' chunks='+chunks);
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
+   }
+   if(url.pathname==='/api/private/upload/progress'){
+    if(req.method!=='GET'){respond(res,405,{error:'method_not_allowed'});return true;}
+    const id=safeString(url.searchParams.get('id'));
+    const s=session(res,id);if(!s)return true;
+    respond(res,200,{uploadId:id,name:s.name,size:s.size,chunks:s.chunks,chunkSize:CHUNK_SIZE,receivedParts:[...s.parts.keys()].sort((a,b)=>a-b)});
+    return true;
    }
    if(url.pathname==='/api/private/upload/part'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
@@ -65,6 +73,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     if(s.busy){respond(res,409,{error:'part_busy',message:'Espera a que termine la parte anterior.'});return true;}
     const expected=Math.min(CHUNK_SIZE,s.size-((n-1)*CHUNK_SIZE));
     s.busy=true;
+    if(n===1||n%10===0||n===s.chunks)console.log('NÉVIX R2 upload part received: n='+n+' total='+s.chunks+' size='+expected);
     try{
      const data=await readPart(req,expected);
      let result;
@@ -80,6 +89,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      }
      if(!result?.ETag)throw {status:502,error:'missing_etag',message:'Cloudflare R2 no confirmó la parte subida.'};
      s.parts.set(n,result.ETag);
+     if(n===1||n%10===0||n===s.chunks)console.log('NÉVIX R2 upload part stored: n='+n+' total='+s.chunks);
      respond(res,200,{ok:true,part:n,received:data.length});
     }finally{s.busy=false;}
     return true;
@@ -104,6 +114,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      const verified=await client.send(new HeadObjectCommand({Bucket:bucket,Key:s.key}));
      if(Number(verified.ContentLength)!==s.size)throw {status:502,error:'stored_size_mismatch',message:'R2 no confirmó el tamaño correcto de la película.'};
      active.delete(safeString(data.uploadId));
+     console.log('NÉVIX R2 upload complete: size_mb='+Math.round(s.size/1048576)+' chunks='+s.chunks+' verified=true');
     }finally{s.busy=false;}
     let ready=null,pending=null;
     try{const rows=await onComplete();ready=rows.filter(x=>x.status==='ready').length;pending=rows.filter(x=>x.status!=='ready').length;}
