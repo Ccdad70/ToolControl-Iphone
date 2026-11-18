@@ -92,11 +92,11 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const date=stamp.slice(0,8);
   const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature='+('0'.repeat(64));
   const objectKey=key.split('/').map(encodeURIComponent).join('/');
-  const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId);
+  const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+(uploadId?'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId):'');
   const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':'application/octet-stream','Content-Length':String(body.length)},body,signal:AbortSignal.timeout(60000)});
   if(!response.ok)throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
   const ETag=String(response.headers.get('etag')||'');
-  if(!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
+  if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
   return {ETag};
  }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
@@ -249,6 +249,10 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    try{
     await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
    }finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:singleKey}));}catch(_){}}
+   probeStage='raw_put_object';
+   const rawKey='nevix-meta/.raw-put-probe-'+randomUUID()+'.bin';
+   try{await rawUploadPart(rawKey,null,0,Buffer.from('NEVIX-RAW-PUT-TEST'));}
+   finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:rawKey}));}catch(_){}}
    probeStage='create_multipart';
    const payload=Buffer.alloc(6*1024*1024,0);
    const start=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:probeKey,ContentType:'application/octet-stream'}));
