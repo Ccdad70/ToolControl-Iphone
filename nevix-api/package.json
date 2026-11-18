@@ -1,1 +1,16 @@
-{"name":"nevix-catalog-api","private":true,"version":"1.0.0","type":"module","engines":{"node":">=20"},"scripts":{"start":"node server.mjs"}}
+{
+  "name": "nevix-catalog-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.900.0",
+    "@aws-sdk/s3-request-presigner": "^3.900.0"
+  }
+}
