@@ -45,7 +45,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
  let catalog=null,cacheUntil=0,running=null;
 
- async function rawUploadPart(key,uploadId,partNumber,body,declaredSize){
+ async function rawUploadPart(key,uploadId,partNumber,body,declaredSize,contentType='application/octet-stream'){
   // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
   // Never include the API key in a URL, a log, or a browser response.
   const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
@@ -54,7 +54,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const objectKey=key.split('/').map(encodeURIComponent).join('/');
   const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+(uploadId?'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId):'');
   const byteSize=Number(declaredSize??body.length);
-  const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':'application/octet-stream','Content-Length':String(byteSize)},body,duplex:'half',signal:AbortSignal.timeout(3600000)});
+  const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':contentType,'Content-Length':String(byteSize)},body,duplex:'half',signal:AbortSignal.timeout(3600000)});
   if(!response.ok)throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
   const ETag=String(response.headers.get('etag')||'');
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
@@ -203,7 +203,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     }
     const clean=name.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,140);
     const objectKey=PREFIX+Date.now()+'-'+randomUUID()+'-'+clean;
-    await rawUploadPart(objectKey,null,0,req,declaredSize);
+    await rawUploadPart(objectKey,null,0,req,declaredSize,ext[1].toLowerCase()==='mp4'?'video/mp4':'video/webm');
     let scanned=null;
     try{
      const movies=await sync(true);
