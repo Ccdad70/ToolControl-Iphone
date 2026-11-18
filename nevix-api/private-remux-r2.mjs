@@ -14,7 +14,12 @@ export const FFPROBE_BIN=ffprobeInstaller?.path||'ffprobe';
 export function mediaToolsReady(){
  const ffmpeg=spawnSync(FFMPEG_BIN,['-version'],{encoding:'utf8',timeout:6000});
  const ffprobe=spawnSync(FFPROBE_BIN,['-version'],{encoding:'utf8',timeout:6000});
- return {ffmpeg:!ffmpeg.error&&ffmpeg.status===0,ffprobe:!ffprobe.error&&ffprobe.status===0};
+ const enabled=!ffmpeg.error&&ffmpeg.status===0;
+ const encoders=enabled?spawnSync(FFMPEG_BIN,['-hide_banner','-encoders'],{encoding:'utf8',timeout:6000,maxBuffer:512*1024}):null;
+ const list=encoders?.status===0?String(encoders.stdout||''):'';
+ return {ffmpeg:enabled,ffprobe:!ffprobe.error&&ffprobe.status===0,
+  h264Encoder:/^\\s*V[^\\n]*\\blibx264\\b/m.test(list),
+  aacEncoder:/^\\s*A[^\\n]*\\baac\\b/m.test(list)};
 }
 
 const MAX_SIZE=6*1024*1024*1024;
@@ -223,7 +228,7 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
   if(!(entry.size>0&&entry.size<=MAX_SIZE))return{error:'file_too_large'};
   const existing=findByFilm(entry.id);if(existing)return{job:statusOf(existing)};
   const tools=mediaToolsReady();
-  if(!tools.ffmpeg||!tools.ffprobe)return{error:'media_tools_unavailable'};
+  if(!tools.ffmpeg||!tools.ffprobe||!tools.h264Encoder||!tools.aacEncoder)return{error:'media_tools_unavailable'};
   const job={jobId:randomUUID(),filmId:entry.id,phase:'queued',percent:0,message:'Esperando turno para verificar el MP4 en Cloudflare R2.',createdAt:Date.now(),auto};
   jobs.set(job.jobId,job);
   while(jobs.size>JOBS_LIMIT){const first=[...jobs].find(([,v])=>['completed','failed'].includes(v.phase));if(!first)break;jobs.delete(first[0]);}
