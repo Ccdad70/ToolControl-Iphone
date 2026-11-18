@@ -60,7 +60,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
   return {ETag};
  }
- async function telnyxSignedUrl(key,ttl=3600){
+ async function telnyxSignedUrl(key,ttl=240){
   // Telnyx requires its own presigned URL API. Never sign with the AWS SDK;
   // doing so can reveal the API key embedded in the S3 Access Key ID.
   const objectPath=String(key).split('/').map(encodeURIComponent).join('/');
@@ -70,7 +70,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    const response=await fetch('https://api.telnyx.com'+path,{
     method:'POST',
     headers:{Authorization:'Bearer '+telnyxKey,'Content-Type':'application/json'},
-    body:JSON.stringify({ttl}),signal:AbortSignal.timeout(20000)
+    body:JSON.stringify({ttl:Math.min(240,Math.max(1,Math.trunc(Number(ttl)||240)))}),signal:AbortSignal.timeout(20000)
    });
    if(!response.ok){
     console.error('NÉVIX Telnyx presign rejected http='+response.status);
@@ -188,8 +188,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const rows=await sync();
     const item=rows.find(x=>x.id===id&&x.status==='ready'&&SUPPORTED.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
-    const signed=await telnyxSignedUrl(item.key,3600);
-    return reply(res,200,{url:signed,expiresIn:3600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
+    const signed=await telnyxSignedUrl(item.key,240);
+    return reply(res,200,{url:signed,expiresIn:240,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
    if(url.pathname==='/api/private/upload/direct'){
@@ -263,7 +263,14 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    stage='catalog_sync';
    const rows=await sync(true);
    console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready').length);
-   return {ok:true,reason:'bucket_read_write_and_catalog_sync_ok'};
+   const firstReady=rows.find(x=>x.status==='ready'&&SUPPORTED.test(x.key));
+   if(firstReady){
+    stage='presigned_url';
+    // Probe is private, with a short TTL. Never log the temporary URL or any credentials.
+    await telnyxSignedUrl(firstReady.key,240);
+    console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240');
+   }
+   return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
    const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
