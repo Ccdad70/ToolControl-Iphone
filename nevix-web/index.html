@@ -2011,6 +2011,10 @@ function privateAdminSection(){
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
  +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida privada por streaming mediante NÉVIX. Para encontrar la portada automáticamente, nombra el archivo como Gladiator.2000.mp4. Los archivos con números se identifican en Revisar pendientes.</p>'
+ +'<div class="actions" style="margin-top:18px"><button class="btn" type="button" data-action="private-remux">♻ Preparar MP4 compatible con Android</button></div>'
+ +'<p class="hint">Sin recodificar ni perder calidad. La operación descarga el archivo desde Telnyx y guarda una nueva copia: puede consumir aproximadamente el doble del tamaño de la película en transferencias. El original se conserva como respaldo.</p>'
+ +'<div id="private-remux-select-holder"></div>'
+ +'<p class="hint" id="private-remux-status" role="status" aria-live="polite"></p>'
  +'</section>';
 }
 const originalRenderAdminForPrivateStorage=renderAdmin;
@@ -2074,6 +2078,56 @@ async function privateApproveAdmin(id){
   await privateReviewAdmin();
   if(privateFamilyCode)await loadPrivateMovies();
  }catch(e){toast('No se pudo aprobar: '+e.message);}
+}
+
+async function privateRemuxAdmin(){
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ const status=document.getElementById('private-remux-status');
+ const btn=document.querySelector('[data-action="private-remux"]');
+ const holder=document.getElementById('private-remux-select-holder');
+ if(!key){toast('Introduce primero tu código de administración.');return;}
+ if(btn?.disabled)return;
+ if(btn)btn.disabled=true;
+ const tell=s=>{if(status)status.textContent=s;};
+ try{
+  tell('Buscando tus películas disponibles en el servidor…');
+  const catalog=await privateRequest('/api/private/admin/catalog',key,true);
+  const items=(catalog.items||[]).filter(x=>x.status==='ready');
+  if(!items.length)throw Error('Todavía no hay películas listas para preparar.');
+  if(items.length>1&&!document.getElementById('private-remux-choice')){
+   if(holder)holder.innerHTML='<label class="field">Película que deseas preparar<select id="private-remux-choice">'+items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.title)+' ('+Math.round(Number(x.size||0)/1048576)+' MB)</option>').join('')+'</select></label>';
+   tell('Selecciona la película y pulsa nuevamente «Preparar MP4 compatible con Android».');
+   return;
+  }
+  const choice=document.getElementById('private-remux-choice')?.value||items[0].id;
+  const selected=items.find(x=>x.id===choice);
+  if(!selected)throw Error('Selecciona una película válida.');
+  tell('Iniciando la preparación de '+selected.title+'…');
+  let started;
+  try{started=await privateRequest('/api/private/remux/start',key,true,'POST',{id:selected.id});}
+  catch(e){
+   if(!/Ya se está preparando otra película/.test(e.message||''))throw e;
+   throw Error('Ya existe otra conversión activa. La copia original está a salvo.');
+  }
+  if(!started?.job?.jobId)throw Error('El servidor no confirmó el inicio de la tarea.');
+  let current=started.job;
+  for(let tries=0;tries<900;tries++){
+   if(!current?.phase)throw Error('El servidor no devolvió el estado de la conversión.');
+   const label={queued:'En cola',downloading:'Descargando de Telnyx',remuxing:'Reorganizando el MP4 sin recodificar',uploading:'Guardando en Telnyx',indexing:'Actualizando la película',completed:'Completado',failed:'No completado'}[current.phase]||current.phase;
+   tell(label+' · '+(Number(current.percent)||0)+'% · '+String(current.message||''));
+   if(current.phase==='completed'){
+    if(privateFamilyCode)await loadPrivateMovies();
+    toast('Película preparada. Entra en Películas y vuelve a reproducirla.');
+    return;
+   }
+   if(current.phase==='failed')return;
+   await new Promise(resolve=>setTimeout(resolve,5000));
+   const latest=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(current.jobId),key,true);
+   current=latest.job;
+  }
+  tell('La preparación superó el tiempo de seguimiento. No vuelvas a subir el archivo. Revisa el estado del servidor.');
+ }catch(e){tell('No se pudo iniciar la preparación: '+String(e.message||'Error inesperado.'));}
+ finally{if(btn)btn.disabled=false;}
 }
 
 async function privateUploadAdmin(){
@@ -2678,7 +2732,7 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel?.requestFullscreen)activePanel.requestFullscreen().catch(()=>toast('No se puede ampliar esta vista previa.'));else if(activePanel?.webkitRequestFullscreen)activePanel.webkitRequestFullscreen();break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel?.requestFullscreen)activePanel.requestFullscreen().catch(()=>toast('No se puede ampliar esta vista previa.'));else if(activePanel?.webkitRequestFullscreen)activePanel.webkitRequestFullscreen();break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;case 'private-review':void privateReviewAdmin();break;case 'private-remux':void privateRemuxAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
