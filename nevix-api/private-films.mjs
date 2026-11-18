@@ -283,15 +283,28 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const fileType=mp4Header?'mp4_ftyp':firstBytes.length>4&&firstBytes.toString('ascii',0,4)==='\\x1aE\\xdf\\xa3'?'webm':'unknown';
     console.log('NÉVIX Telnyx video format probe: http='+playbackCode+' type='+headers.type.slice(0,55)+' range='+headers.range+' content_length='+headers.length+' bytes='+firstBytes.length+' signature='+fileType);
     if(mp4Header){
-     const tail=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=-65536'},signal:AbortSignal.timeout(20000)});
-     if(tail.status===206){
-      const last=Buffer.from(await tail.arrayBuffer());
-      const moovAtEnd=last.includes(Buffer.from('moov'));
-      console.log('NÉVIX Telnyx video metadata probe: tail_http=206 sampled_bytes='+last.length+' moov_marker_in_tail='+moovAtEnd);
-     }else{
-      if(tail.body){try{await tail.body.cancel();}catch(_){}}
-      console.log('NÉVIX Telnyx video metadata probe: tail_http='+tail.status);
+     // Read only ISO BMFF top-level box headers; never transfer movie frames.
+     const total=Number((headers.range.match(/\/(\d+)$/)||[])[1]||0);
+     let pos=0,boxes=[],foundMoov=false;
+     for(let count=0;count<12&&pos+8<=total;count++){
+      let block;
+      if(pos+16<=firstBytes.length)block=firstBytes.subarray(pos,pos+16);
+      else{
+       const r=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes='+pos+'-'+(pos+15)},signal:AbortSignal.timeout(10000)});
+       if(r.status!==206){if(r.body)await r.body.cancel();break;}
+       block=Buffer.from(await r.arrayBuffer());
+      }
+      if(block.length<8)break;
+      let length=block.readUInt32BE(0),type=block.toString('ascii',4,8);
+      if(!/^[a-zA-Z0-9 ]{4}$/.test(type))break;
+      if(length===1){if(block.length<16)break;length=Number(block.readBigUInt64BE(8));}
+      if(length===0)length=total-pos;
+      if(!Number.isSafeInteger(length)||length<8||pos+length>total)break;
+      boxes.push(type+':'+length);
+      if(type==='moov'){foundMoov=true;break;}
+      pos+=length;
      }
+     console.log('NÉVIX Telnyx mp4 container probe: top_level='+boxes.join(',').slice(0,290)+' moov_found='+foundMoov+' total_bytes='+total);
     }
     console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
