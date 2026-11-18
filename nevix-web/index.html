@@ -2607,6 +2607,7 @@ function play(id,sourceIndex=0){
  const isHLS=/\.m3u8(?:[?#]|$)/i.test(url);
  els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><video id="nevix-player" class="player-video" controls autoplay playsinline></video><div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}${it.featuredVenezuela?'<button class="btn btn-sm" data-action="unmute-player" id="player-unmute" hidden>🔊 Activar sonido</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
  const video=$('#nevix-player'),status=$('#player-status'),details=$('#player-details');
+ if(it.privateMovie&&status)status.textContent='Abriendo película privada desde Cloudflare R2…';
  if(it.privateMovie&&status)status.classList.add('nevix-private-status');
  const openPrivateFallback=()=>{
   if(!it.privateMovie||it.privateProxyActive||!it.privateFallbackUrl)return false;
@@ -2698,7 +2699,8 @@ function play(id,sourceIndex=0){
    if(isHLS&&engine==='nativo'){errors.push(detail);stopAndReport('El motor nativo no pudo abrir esta señal. El canal puede requerir su reproductor oficial.',detail);}
    else if(!isHLS)stopAndReport('El video no se pudo descargar o decodificar.',detail);
  });
- video.addEventListener('loadedmetadata',()=>{const last=state.progress[it.id]?.time||0;if(it.kind!=='live'&&last>1&&Number.isFinite(video.duration)&&last<video.duration-2)video.currentTime=last;});
+ video.addEventListener('loadedmetadata',()=>{if(it.privateMovie&&!playing&&status)status.textContent='Metadatos MP4 recibidos. Preparando imagen y sonido…';const last=state.progress[it.id]?.time||0;if(it.kind!=='live'&&last>1&&Number.isFinite(video.duration)&&last<video.duration-2)video.currentTime=last;});
+ video.addEventListener('stalled',()=>{if(it.privateMovie&&!playing&&status)status.textContent='La transmisión MP4 no está recibiendo datos. Verificando conexión con R2…';});
  video.addEventListener('timeupdate',()=>{if(it.privateMovie&&video.currentTime>0.1)video.closest('.player-shell')?.classList.add('nevix-video-ready');if(it.kind==='live'||!Number.isFinite(video.duration)||!video.duration)return;let now=Date.now();if(now-state.lastSave<4000)return;state.lastSave=now;state.progress[it.id]={time:Math.floor(video.currentTime),duration:Math.floor(video.duration)};store();});
  video.addEventListener('ended',()=>{if(it.kind!=='live'){delete state.progress[it.id];store();}if(it.kind==='series'){const episodes=allItems().filter(x=>x.kind==='series'&&(x.seriesName||x.title)===(it.seriesName||it.title)).sort((a,b)=>(a.season-b.season)||(a.episode-b.episode));let n=episodes.findIndex(x=>x.id===it.id);if(n>=0&&episodes[n+1])status.textContent='Episodio terminado. El siguiente: '+episodes[n+1].title;}});
  currentLiveEngine={cancel:()=>{stopped=true;stopTimer();},switchEngine:()=>{
@@ -2724,8 +2726,11 @@ function play(id,sourceIndex=0){
    watchdogAfter(11000,'El reproductor no pudo iniciar el video',()=>{
     if(video.readyState<2&&!openPrivateFallback())stopAndReport('No se pudo cargar el video. Comprueba si el MP4 es compatible con este dispositivo.','Reproductor sin imagen tras 11 segundos');
    });
-  }else if(it.privateMovie&&!window.MediaSource?.isTypeSupported){
-   watchdogAfter(16000,'El video privado no respondió',()=>{if(video.readyState<2)stopAndReport('La película no se pudo cargar. El servidor respondió, pero el video no empezó.','Sin datos reproducibles después de 16 segundos');});
+  }else if(it.privateMovie){
+   watchdogAfter(22000,'El video privado no respondió',()=>{
+    if(video.readyState<2)stopAndReport('El MP4 no pudo comenzar en Android. Es posible que su índice de reproducción esté al final del archivo o que necesite otro formato de contenedor.','Sin metadatos reproducibles después de 22 segundos (readyState='+video.readyState+', networkState='+video.networkState+')');
+    else if(!playing)stopAndReport('El reproductor recibió el MP4, pero no consiguió iniciar imagen y sonido.','Metadatos disponibles sin reproducción después de 22 segundos');
+   });
   }
  }
  $('#player-root .player-close')?.focus();
