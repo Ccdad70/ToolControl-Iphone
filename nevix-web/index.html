@@ -1928,7 +1928,7 @@ function renderAdmin(){if(state.pinHash&&!state.unlocked)return renderAdminLocke
  <div class="panel-card"><h2>Respaldo y privacidad</h2><p>Exporta o restaura tus fuentes, favoritos y progreso mediante un archivo JSON. No incluye los videos, solo sus enlaces.</p><div class="actions"><button class="btn btn-sm" data-action="export-json">↓ Exportar</button><label class="btn btn-sm" for="json-file">↑ Importar</label><input class="sr-only" type="file" id="json-file" accept=".json,application/json" /></div><hr style="border:0;border-top:1px solid #2e3857;margin:22px 0"><h2>Protección local</h2><p>${state.pinHash?'PIN configurado. Puedes cambiarlo o quitarlo.':'Puedes crear un PIN para restringir el acceso a este panel en este dispositivo.'}</p><div class="actions"><button class="btn btn-sm" data-action="set-pin">${state.pinHash?'Cambiar PIN':'Crear PIN'}</button>${state.pinHash?'<button class="btn btn-sm" data-action="remove-pin">Quitar PIN</button><button class="btn btn-sm" data-action="lock">Bloquear</button>':''}</div><p class="hint">Si borras los datos del navegador se pierde el PIN y el catálogo local.</p></div><div class="panel-card"><h2>Datos de demostración</h2><p>Puedes restaurar el catálogo de muestra; se reemplazará tu catálogo actual.</p><button class="btn btn-danger btn-sm" data-action="reset">Restablecer NÉVIX TV</button></div></div></div>`;
 }
 
-/* NÉVIX private Telnyx Storage: no credentials in published HTML */
+/* NÉVIX private Cloudflare R2 Storage: no credentials in published HTML */
 let privateMovies=[];
 let privateFamilyCode='';
 let privateStorageReady=false;
@@ -1943,7 +1943,7 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
  const headers={};
  if(code)headers[adminAccess?'X-Nevix-Admin-Key':'X-Nevix-Access-Code']=code;
  if(payload)headers['Content-Type']='application/json';
- const timeout=route.includes('/remux/start')?120000:route.includes('/sync')||route.includes('/admin/catalog')?90000:45000;
+ const timeout=route.includes('/sync')||route.includes('/admin/catalog')?90000:45000;
  const attempts=method==='GET'?2:1;
  for(let attempt=0;attempt<attempts;attempt++){
   try{
@@ -1963,24 +1963,10 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
   }
  }
 }
-async function privateWarmApi(update){
- if(update)update('Conectando con NÉVIX TV en Render. Si el servidor está en reposo, puede tardar en despertar…');
- try{
-  const response=await fetch(WATCHMODE_BACKEND+'/health',{method:'GET',cache:'no-store',signal:AbortSignal.timeout(90000)});
-  if(!response.ok)throw new Error('HTTP '+response.status);
-  const status=await response.json();
-  if(!status?.ok||!status?.privateStorage)throw new Error('El servidor privado de películas no está listo.');
- }catch(error){
-  if(error?.name==='TypeError'||error?.name==='TimeoutError'||error?.name==='AbortError'){
-   throw new Error('No se pudo conectar con el servicio NÉVIX en Render. Prueba cambiar entre Wi-Fi y datos móviles, o recarga la aplicación. No necesitas volver a subir la película.');
-  }
-  throw error;
- }
-}
 async function privateCheckStatus(){
  try{
   const data=await privateRequest('/api/private/status','');
-  privateStorageReady=Boolean(data.configured);
+  privateStorageReady=Boolean(data.configured&&data.uploadReady);
  }catch(_){privateStorageReady=false;}
  if(state.view==='admin')render();
 }
@@ -2002,7 +1988,7 @@ async function loadPrivateMovies(showErrors=false){
 async function privateFamilyLogin(){
  if(!privateStorageReady){
   await privateCheckStatus();
-  if(!privateStorageReady){toast('Primero debes configurar Telnyx Storage en Render.');return;}
+  if(!privateStorageReady){toast('Primero debes configurar Cloudflare R2 Storage en Render.');return;}
  }
  const code=prompt('Acceso familiar NÉVIX TV. Introduce el código privado:','');
  if(code===null)return;
@@ -2034,17 +2020,13 @@ async function playPrivateFilm(item){
 function privateAdminSection(){
  return '<section class="panel-card" style="margin-top:24px"><h2>☁ Servidor privado de películas</h2>'
  +'<p>Las películas subidas aparecerán automáticamente en Películas tras identificar su portada. Los espectadores no verán ninguna sección de biblioteca privada.</p>'
- +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Telnyx Storage está configurado.':'Para activarlo configura TELNYX_API_KEY, TELNYX_STORAGE_BUCKET, TELNYX_STORAGE_REGION, NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
+ +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Cloudflare R2 está conectado y permite subir MP4.':'Para activarlo configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y los códigos NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
- +'<label class="field">Película MP4 / WebM (máximo 5 GB por archivo)<input type="file" id="private-film-file" accept=".mp4,.webm,video/mp4,video/webm"></label>'
+ +'<label class="field">Película MP4 (máximo 5 GB por archivo)<input type="file" id="private-film-file" accept=".mp4,video/mp4"></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
- +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida privada por streaming mediante NÉVIX. Para encontrar la portada automáticamente, nombra el archivo como Gladiator.2000.mp4. Los archivos con números se identifican en Revisar pendientes.</p>'
- +'<div class="actions" style="margin-top:18px"><button class="btn" type="button" data-action="private-remux">♻ Preparar MP4 compatible con Android</button></div>'
- +'<p class="hint">Sin recodificar ni perder calidad. La operación descarga el archivo desde Telnyx y guarda una nueva copia: puede consumir aproximadamente el doble del tamaño de la película en transferencias. El original se conserva como respaldo.</p>'
- +'<div id="private-remux-select-holder"></div>'
- +'<p class="hint" id="private-remux-status" role="status" aria-live="polite"></p>'
- +'</section>';
+ +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida MP4 segura a Cloudflare R2 en bloques de 8 MB, con reintentos automáticos. Para identificar la portada, utiliza un nombre como Gladiator.2000.mp4. Los archivos con números se identifican en Revisar pendientes.</p>'
+ +'</section>'; +'</section>';
 }
 const originalRenderAdminForPrivateStorage=renderAdmin;
 renderAdmin=function(){
@@ -2059,7 +2041,7 @@ async function privateSyncAdmin(){
  if(button?.disabled)return;
  if(button)button.disabled=true;
  const update=txt=>{if(status)status.textContent=txt;};
- update('Buscando los videos guardados en Telnyx y sus portadas…');
+ update('Buscando los videos guardados en Cloudflare R2 y sus portadas…');
  try{
   const result=await privateRequest('/api/private/sync',key,true,'POST');
   const ready=Number(result.ready)||0,pending=Number(result.pending)||0;
@@ -2109,106 +2091,79 @@ async function privateApproveAdmin(id){
  }catch(e){toast('No se pudo aprobar: '+e.message);}
 }
 
-async function privateRemuxAdmin(){
- const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- const status=document.getElementById('private-remux-status');
- const btn=document.querySelector('[data-action="private-remux"]');
- const holder=document.getElementById('private-remux-select-holder');
- if(!key){toast('Introduce primero tu código de administración.');return;}
- if(btn?.disabled)return;
- if(btn)btn.disabled=true;
- const tell=s=>{if(status)status.textContent=s;};
- try{
-  await privateWarmApi(tell);
-  tell('Conectado. Buscando tus películas disponibles en Telnyx…');
-  const catalog=await privateRequest('/api/private/admin/catalog',key,true);
-  const items=(catalog.items||[]).filter(x=>x.status==='ready');
-  if(!items.length)throw Error('Todavía no hay películas listas para preparar.');
-  if(items.length>1&&!document.getElementById('private-remux-choice')){
-   if(holder)holder.innerHTML='<label class="field">Película que deseas preparar<select id="private-remux-choice">'+items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.title)+' ('+Math.round(Number(x.size||0)/1048576)+' MB)</option>').join('')+'</select></label>';
-   tell('Selecciona la película y pulsa nuevamente «Preparar MP4 compatible con Android».');
-   return;
-  }
-  const choice=document.getElementById('private-remux-choice')?.value||items[0].id;
-  const selected=items.find(x=>x.id===choice);
-  if(!selected)throw Error('Selecciona una película válida.');
-  tell('Iniciando la preparación de '+selected.title+'…');
-  let started;
-  try{started=await privateRequest('/api/private/remux/start',key,true,'POST',{id:selected.id});}
-  catch(e){
-   if(!/Ya se está preparando otra película/.test(e.message||''))throw e;
-   throw Error('Ya existe otra conversión activa. La copia original está a salvo.');
-  }
-  if(!started?.job?.jobId)throw Error('El servidor no confirmó el inicio de la tarea.');
-  let current=started.job;
-  for(let tries=0;tries<900;tries++){
-   if(!current?.phase)throw Error('El servidor no devolvió el estado de la conversión.');
-   const label={queued:'En cola',downloading:'Descargando de Telnyx',remuxing:'Reorganizando el MP4 sin recodificar',uploading:'Guardando en Telnyx',indexing:'Actualizando la película',completed:'Completado',failed:'No completado'}[current.phase]||current.phase;
-   tell(label+' · '+(Number(current.percent)||0)+'% · '+String(current.message||''));
-   if(current.phase==='completed'){
-    if(privateFamilyCode)await loadPrivateMovies();
-    toast('Película preparada. Entra en Películas y vuelve a reproducirla.');
-    return;
-   }
-   if(current.phase==='failed')return;
-   await new Promise(resolve=>setTimeout(resolve,5000));
-   const latest=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(current.jobId),key,true);
-   current=latest.job;
-  }
-  tell('La preparación superó el tiempo de seguimiento. No vuelvas a subir el archivo. Revisa el estado del servidor.');
- }catch(e){tell('No se pudo iniciar la preparación: '+String(e.message||'Error inesperado.'));}
- finally{if(btn)btn.disabled=false;}
-}
-
 async function privateUploadAdmin(){
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  const file=document.getElementById('private-film-file')?.files?.[0];
  const status=document.getElementById('private-upload-status');
  const button=document.querySelector('[data-action="private-upload"]');
  if(button?.disabled)return;
- if(!key){toast('Introduce tu código de administración del servidor.');return;}
- if(!file){toast('Selecciona una película MP4 o WebM.');return;}
- if(!/\.(?:mp4|webm)$/i.test(file.name)||file.size<=0||file.size>=5*1024*1024*1024){
-  toast('Archivo no compatible. Utiliza MP4 o WebM de menos de 5 GB.');return;
+ if(!key){toast('Introduce tu código de administración.');return;}
+ if(!file){toast('Selecciona una película MP4.');return;}
+ if(!/\.mp4$/i.test(file.name)||file.size<=0||file.size>=5*1024*1024*1024){
+  toast('Solo se aceptan archivos MP4 de menos de 5 GB.');return;
  }
- const update=text=>{if(status)status.textContent=text;};
+ const update=message=>{if(status)status.textContent=message;};
+ let sessionId='';
  if(button)button.disabled=true;
  try{
-  update('Conectando con tu servidor privado Telnyx…');
-  const done=await new Promise((resolve,reject)=>{
-   const xhr=new XMLHttpRequest();
-   const uri=WATCHMODE_BACKEND+'/api/private/upload/direct?name='+encodeURIComponent(file.name)+'&size='+encodeURIComponent(file.size);
-   xhr.open('POST',uri,true);
-   xhr.setRequestHeader('X-Nevix-Admin-Key',key);
-   xhr.setRequestHeader('Content-Type','application/octet-stream');
-   xhr.timeout=0;
-   xhr.upload.onprogress=e=>{
-    if(e.lengthComputable)update('Subiendo película… '+Math.min(99,Math.floor(e.loaded/e.total*100))+'%');
-    else update('Subiendo película a Telnyx…');
-   };
-   xhr.onload=()=>{
-    let result={};
-    try{result=JSON.parse(xhr.responseText);}catch(_){}
-    if(xhr.status>=200&&xhr.status<300&&result.stored)return resolve(result);
-    reject(Error(result.message||'No se pudo guardar la película (HTTP '+xhr.status+').'));
-   };
-   xhr.onerror=()=>reject(Error('Se interrumpió la conexión. Comprueba tus datos móviles o Wi-Fi.'));
-   xhr.onabort=()=>reject(Error('La transferencia se canceló.'));
-   xhr.ontimeout=()=>reject(Error('La transferencia tardó demasiado.'));
-   xhr.send(file);
-  });
+  const readiness=await privateRequest('/api/private/status','');
+  if(!readiness.configured||!readiness.uploadReady)throw Error('Cloudflare R2 aún no está listo. Revisa las credenciales y la conexión en Render.');
+  update('Conectando a Cloudflare R2 para preparar la subida por bloques…');
+  const started=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size});
+  sessionId=String(started.uploadId||'');
+  const bytesPerPart=Number(started.chunkSize),total=Number(started.chunks);
+  if(!/^[a-f0-9-]{36}$/i.test(sessionId)||!Number.isSafeInteger(bytesPerPart)||bytesPerPart<1024*1024||!Number.isSafeInteger(total)||total!==Math.ceil(file.size/bytesPerPart))
+   throw Error('El servidor no confirmó correctamente la sesión de subida.');
+  for(let part=1;part<=total;part++){
+   const from=(part-1)*bytesPerPart,to=Math.min(file.size,from+bytesPerPart);
+   const piece=file.slice(from,to);
+   let delivered=false,problem=null;
+   for(let attempt=1;attempt<=3&&!delivered;attempt++){
+    try{
+     const response=await fetch(WATCHMODE_BACKEND+'/api/private/upload/part?id='+encodeURIComponent(sessionId)+'&part='+part,{
+      method:'POST',
+      headers:{'X-Nevix-Admin-Key':key,'Content-Type':'application/octet-stream'},
+      body:piece,cache:'no-store',signal:AbortSignal.timeout(180000)
+     });
+     let answer={};try{answer=await response.json();}catch(_){}
+     if(!response.ok){
+      problem=Error(answer.message||'El servidor rechazó el bloque '+part+' (HTTP '+response.status+').');
+      if(response.status>=400&&response.status<500&&response.status!==408&&response.status!==429)break;
+      throw problem;
+     }
+     if(!answer.ok||Number(answer.part)!==part)throw Error('El servidor no confirmó la recepción del bloque '+part+'.');
+     delivered=true;
+    }catch(error){
+     problem=error;
+     if(attempt<3){
+      update('Reintentando el bloque '+part+' de '+total+'…');
+      await new Promise(resolve=>setTimeout(resolve,1000*attempt));
+     }
+    }
+   }
+   if(!delivered)throw problem||Error('No se pudo enviar el bloque '+part+'.');
+   const percent=Math.min(99,Math.floor(to/file.size*100));
+   update('Subiendo MP4 a Cloudflare R2… '+percent+' % · bloque '+part+' de '+total);
+  }
+  update('Verificando y ensamblando la película en Cloudflare R2…');
+  const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId});
+  if(!done?.stored)throw Error('R2 no confirmó que la película está completa.');
+  sessionId='';
   if(done.metadataPending){
-   update('Película guardada en Telnyx. Actualizando ahora el catálogo…');
-   await privateSyncAdmin();
+   update('MP4 guardado en R2. El catálogo todavía debe sincronizarse.');
   }else if(Number(done.pending)>0){
-   update('Película guardada. '+done.ready+' listas y '+done.pending+' pendientes. Escribe el título y año en el formulario que aparece abajo.');
+   update('MP4 guardado en R2. Identifica su título y portada para habilitarlo en Películas.');
    await privateReviewAdmin();
   }else{
-   update('Película guardada correctamente en Telnyx y registrada en NÉVIX TV.');
+   update('MP4 guardado y verificado en Cloudflare R2. Ya figura en NÉVIX TV.');
    if(privateFamilyCode)await loadPrivateMovies();
   }
- }catch(e){update('No se completó la subida: '+String(e.message||'Error del servidor.'));}
- finally{if(button)button.disabled=false;}
+ }catch(e){
+  update('No se completó la subida: '+String(e?.message||'Error al subir MP4.'));
+  if(sessionId){
+   try{await privateRequest('/api/private/upload/abort',key,true,'POST',{uploadId:sessionId});}catch(_){}
+  }
+ }finally{if(button)button.disabled=false;}
 }
 
 function render({focusSearch=false}={}){els.nav.innerHTML=navHTML();const bottom=$('#mobile-bottom-nav');if(bottom)bottom.innerHTML=mobileNavHTML();if(els.crumb)els.crumb.innerHTML=`NÉVIX TV <span>/</span> ${esc(NAMES[state.view])}`;
@@ -2313,7 +2268,7 @@ let privateMediaSession=null;
 
 // Android's HTML5 <video src> does not reliably start some fragmented MP4s.
 // MSE receives the same signed, private HTTP Range stream, retaining the
-// original file in Telnyx and avoiding an expensive conversion/re-upload.
+// original file in Cloudflare R2 and avoiding an expensive conversion/re-upload.
 function startPrivateFragmentedMP4({url,video,onStatus,onError}){
  const MSE=window.MediaSource;
  if(!MSE||typeof MSE.isTypeSupported!=='function')throw Error('Este navegador no admite el reproductor de MP4 fragmentado.');
@@ -2347,7 +2302,7 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
  const codecFromInit=bytes=>{
   const ascii=(a,b)=>String.fromCharCode(...bytes.subarray(a,b));
   // The initialization segment intentionally contains only ftyp + moov.
-  // The actual Telnyx video has a 1473-byte init, so requiring >=1500 or
+  // The actual Cloudflare R2 video has a 1473-byte init, so requiring >=1500 or
   // requiring moof in this buffer incorrectly rejects a valid movie.
   if(bytes.length<16||ascii(4,8)!=='ftyp')throw Error('El archivo no contiene una cabecera MP4 válida.');
   const limit=Math.min(bytes.length-12,60000);
@@ -2762,7 +2717,7 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel?.requestFullscreen)activePanel.requestFullscreen().catch(()=>toast('No se puede ampliar esta vista previa.'));else if(activePanel?.webkitRequestFullscreen)activePanel.webkitRequestFullscreen();break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;case 'private-review':void privateReviewAdmin();break;case 'private-remux':void privateRemuxAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel?.requestFullscreen)activePanel.requestFullscreen().catch(()=>toast('No se puede ampliar esta vista previa.'));else if(activePanel?.webkitRequestFullscreen)activePanel.webkitRequestFullscreen();break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
