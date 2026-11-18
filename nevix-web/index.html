@@ -2068,73 +2068,38 @@ async function privateUploadAdmin(){
  if(!/\.(?:mp4|webm)$/i.test(file.name)||file.size<=0||file.size>=5*1024*1024*1024){
   toast('Archivo no compatible. Utiliza MP4 o WebM de menos de 5 GB.');return;
  }
- const update=msg=>{if(status)status.textContent=msg;};
- let uploadId='',success=false;
+ const update=text=>{if(status)status.textContent=text;};
  if(button)button.disabled=true;
  try{
-  update('Preparando subida privada de '+file.name+'…');
-  const started=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size});
-  uploadId=started.uploadId;
-  const chunkSize=Number(started.chunkSize)||8*1024*1024;
-  if(!uploadId||chunkSize<1024||chunkSize>16*1024*1024)throw Error('El servidor devolvió una configuración de carga inválida.');
-  const count=Math.ceil(file.size/chunkSize);
-  for(let i=0;i<count;i++){
-   const offset=i*chunkSize;
-   const data=file.slice(offset,Math.min(file.size,offset+chunkSize));
-   let uploaded=false,problem=null;
-   for(let attempt=1;attempt<=3&&!uploaded;attempt++){
-    try{
-     await new Promise((resolve,reject)=>{
-      const xhr=new XMLHttpRequest();
-      xhr.open('POST',WATCHMODE_BACKEND+'/api/private/upload/part?id='+encodeURIComponent(uploadId)+'&part='+(i+1),true);
-      xhr.setRequestHeader('X-Nevix-Admin-Key',key);
-      xhr.setRequestHeader('Content-Type','application/octet-stream');
-      xhr.timeout=180000;
-      xhr.upload.onprogress=e=>{
-       const current=e.lengthComputable?e.loaded:0;
-       const percent=Math.min(99,Math.floor((offset+current)/file.size*100));
-       update('Subiendo película a Telnyx… '+percent+'% (parte '+(i+1)+' de '+count+')');
-      };
-      xhr.onload=()=>{
-       if(xhr.status>=200&&xhr.status<300)return resolve();
-       let msg='Error HTTP '+xhr.status;
-       try{msg=JSON.parse(xhr.responseText).message||msg;}catch(_){}
-       reject(Error(msg));
-      };
-      xhr.onerror=()=>reject(Error('Se interrumpió la conexión de internet.'));
-      xhr.ontimeout=()=>reject(Error('La conexión tardó demasiado.'));
-      xhr.onabort=()=>reject(Error('La carga fue cancelada.'));
-      xhr.send(data);
-     });
-     uploaded=true;
-    }catch(e){
-     problem=e;
-     if(attempt<3)update('Reintentando la parte '+(i+1)+' de '+count+'…');
-    }
-   }
-   if(!uploaded)throw problem||Error('No se pudo enviar una parte del archivo.');
-   update('Película enviada… '+Math.floor((i+1)/count*100)+'%');
-  }
-  update('Finalizando película en Telnyx y comprobando su portada…');
-  const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId});
-  if(!done?.stored)throw Error('No se recibió confirmación de Telnyx.');
-  success=true;
-  if(done.metadataPending){
-   update('Película guardada en Telnyx. La identificación de la portada está pendiente: usa Revisar nuevas películas.');
-  }else if(Number(done.pending)>0){
-   update('Película guardada en Telnyx. '+done.ready+' listas y '+done.pending+' pendiente(s) de portada. Si el archivo tiene un nombre numérico, entra en Revisar pendientes para poner el título real.');
-  }else{
-   update('Película guardada correctamente en Telnyx y registrada en NÉVIX TV.');
-  }
+  update('Conectando con tu servidor privado Telnyx…');
+  const done=await new Promise((resolve,reject)=>{
+   const xhr=new XMLHttpRequest();
+   const uri=WATCHMODE_BACKEND+'/api/private/upload/direct?name='+encodeURIComponent(file.name)+'&size='+encodeURIComponent(file.size);
+   xhr.open('POST',uri,true);
+   xhr.setRequestHeader('X-Nevix-Admin-Key',key);
+   xhr.setRequestHeader('Content-Type','application/octet-stream');
+   xhr.timeout=0;
+   xhr.upload.onprogress=e=>{
+    if(e.lengthComputable)update('Subiendo película… '+Math.min(99,Math.floor(e.loaded/e.total*100))+'%');
+    else update('Subiendo película a Telnyx…');
+   };
+   xhr.onload=()=>{
+    let result={};
+    try{result=JSON.parse(xhr.responseText);}catch(_){}
+    if(xhr.status>=200&&xhr.status<300&&result.stored)return resolve(result);
+    reject(Error(result.message||'No se pudo guardar la película (HTTP '+xhr.status+').'));
+   };
+   xhr.onerror=()=>reject(Error('Se interrumpió la conexión. Comprueba tus datos móviles o Wi-Fi.'));
+   xhr.onabort=()=>reject(Error('La transferencia se canceló.'));
+   xhr.ontimeout=()=>reject(Error('La transferencia tardó demasiado.'));
+   xhr.send(file);
+  });
+  if(done.metadataPending)update('Película guardada en Telnyx. Abre Revisar nuevas películas para actualizar su portada.');
+  else if(Number(done.pending)>0)update('Película guardada. '+done.ready+' listas, '+done.pending+' pendientes de portada. Si el archivo tiene nombre numérico, utiliza Revisar pendientes para indicar su título y año.');
+  else update('Película guardada correctamente en Telnyx y registrada en NÉVIX TV.');
   if(privateFamilyCode)await loadPrivateMovies();
- }catch(e){
-  update('No se completó la subida: '+String(e?.message||'Error inesperado.'));
- }finally{
-  if(uploadId&&!success){
-   try{await privateRequest('/api/private/upload/abort',key,true,'POST',{uploadId});}catch(_){}
-  }
-  if(button)button.disabled=false;
- }
+ }catch(e){update('No se completó la subida: '+String(e.message||'Error del servidor.'));}
+ finally{if(button)button.disabled=false;}
 }
 
 function render({focusSearch=false}={}){els.nav.innerHTML=navHTML();const bottom=$('#mobile-bottom-nav');if(bottom)bottom.innerHTML=mobileNavHTML();if(els.crumb)els.crumb.innerHTML=`NÉVIX TV <span>/</span> ${esc(NAMES[state.view])}`;
