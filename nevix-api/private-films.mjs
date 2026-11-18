@@ -137,7 +137,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const rows=await sync(true),x=rows.find(y=>y.key===entry.key&&y.id===entry.id);
   if(x&&x.status==='processing'){
    x.status='processing_failed';x.validationError=String(message||'No se pudo preparar el MP4.').slice(0,220);
-   delete x.publicationStatus;
    await saveIndex();
   }
  }
@@ -245,7 +244,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/remux/start'&&req.method==='POST'){
     if(!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 no está listo para reparar el video.'});
     const arg=await body(req),rows=await sync(true);
-    const candidates=rows.filter(x=>x.status==='ready'&&SUPPORTED.test(x.key));
+    const candidates=rows.filter(x=>['ready','processing_failed','review'].includes(x.status)&&SUPPORTED.test(x.key));
     const item=candidates.find(x=>x.id===string(arg.id))||(!string(arg.id)&&candidates.length===1?candidates[0]:null);
     if(!item)return reply(res,404,{error:'movie_not_available',message:'Selecciona una película disponible para reparar.'});
     if(item.remuxed)return reply(res,409,{error:'already_repaired',message:'Esta película ya tiene un MP4 estándar. Comprueba su reproducción.'});
@@ -260,8 +259,34 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/upload/direct')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV; el MP4 se sube por bloques a R2.'});
    if(url.pathname.startsWith('/api/private/upload/')&&!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 todavía no está configurado o no superó la prueba de subida. Comprueba las credenciales.'});
    if(await uploads.handle(req,res,url))return;
+   if(url.pathname==='/api/private/admin/library'&&req.method==='GET'){
+    const rows=await sync(true);
+    return reply(res,200,{files:rows.map(x=>({
+     id:x.id,title:x.title,year:x.year||'',status:x.status,size:x.size||0,
+     remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',
+     backupOf:rows.find(y=>y.backupKey===x.key)?.id||'',job:remux?.findByFilm(x.id)||null
+    })),count:rows.length});
+   }
+   if(url.pathname==='/api/private/admin/delete'&&req.method==='POST'){
+    const arg=await body(req);
+    if(string(arg.confirm)!=='ELIMINAR')return reply(res,400,{error:'confirmation_required',message:'Confirma escribiendo ELIMINAR.'});
+    const rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
+    if(!entry||!entry.key.startsWith(PREFIX)||!SUPPORTED.test(entry.key))return reply(res,404,{error:'not_found',message:'No encontramos ese MP4 en Cloudflare R2.'});
+    if(remux?.findByFilm(entry.id))return reply(res,409,{error:'movie_processing',message:'Espera a que finalice la preparación de esta película antes de eliminarla.'});
+    if(string(arg.title)!==string(entry.title))return reply(res,409,{error:'movie_changed',message:'El nombre cambió. Actualiza la lista antes de eliminar.'});
+    const bytes=Number(entry.size)||0,wasBackup=entry.status==='backup';
+    await client.send(new DeleteObjectCommand({Bucket:bucket,Key:entry.key}));
+    const updated=await sync(true);
+    if(updated.some(x=>x.key===entry.key))return reply(res,502,{error:'delete_unconfirmed',message:'El objeto aún aparece en el catálogo de R2. Recarga la lista para comprobar.'});
+    let linksChanged=false;
+    for(const x of updated)if(x.backupKey===entry.key){delete x.backupKey;linksChanged=true;}
+    if(linksChanged)await saveIndex();
+    videoProbeCount.delete(entry.id);
+    console.log('NÉVIX R2 video deleted: size_mb='+Math.round(bytes/1048576)+' backup='+wasBackup);
+    return reply(res,200,{ok:true,deleted:true,bytes,wasBackup,remaining:updated.length});
+   }
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
-    const rows=await sync(true),items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true}));
+    const rows=await sync(true),items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',job:remux?.findByFilm(x.id)||null}));
     const pendingItems=items.filter(x=>x.status!=='ready');
     console.log('NÉVIX R2 admin catalog: movies='+items.length+' pending='+pendingItems.length);
     return reply(res,200,{items,pendingItems,ready:items.length-pendingItems.length,pending:pendingItems.length});
@@ -269,7 +294,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/upload')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV para subir películas con el nuevo sistema seguro.'});
    if(url.pathname==='/api/private/sync'&&req.method==='POST'){
     const rows=await sync(true);
-    const items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true}));
+    const items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',job:remux?.findByFilm(x.id)||null}));
     const pendingItems=items.filter(x=>x.status!=='ready');
     console.log('NÉVIX R2 sync: movies='+items.length+' pending='+pendingItems.length);
     return reply(res,200,{ready:items.length-pendingItems.length,pending:pendingItems.length,pendingItems});
@@ -277,6 +302,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
     if(!entry||!SUPPORTED.test(entry.key))return reply(res,404,{error:'not_found'});
+    if(['processing','processing_failed','backup'].includes(entry.status))return reply(res,409,{error:'not_verified',message:'La película todavía no superó la verificación MP4. No puede publicarse por ahora.'});
     const newTitle=string(arg.title).slice(0,130),newYear=string(arg.year).slice(0,4);
     if(newTitle.length<2||newYear&&!/^(19|20)\d{2}$/.test(newYear))return reply(res,400,{error:'invalid_metadata'});
     const meta=await tmdbSearchPoster(newTitle,newYear,'movie');
@@ -353,5 +379,5 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    console.log('NÉVIX MP4 playback scan: size_mb='+Math.round(fileSize/1048576)+' range='+rangeSupported+' moov='+(moovAt>=0?(mdatAt>=0&&moovAt>mdatAt?'after_mdat':'before_mdat'):'not_found')+' atoms='+boxes.join(',').slice(0,180));
   }catch(err){console.error('NÉVIX MP4 playback scan failed: stage='+stage+' reason='+String(err?.name||'Error').slice(0,42)+' http='+String(err?.$metadata?.httpStatusCode||'none'));}
  }
- return {handle,configured,checkConnection,checkPlayback};
+ return {handle,configured,checkConnection,checkPlayback,recoverAutoJobs};
 }
