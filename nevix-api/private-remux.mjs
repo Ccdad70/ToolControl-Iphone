@@ -31,7 +31,7 @@ async function probe(path){
 }
 async function ffmpegRemux(input,output,onProgress=()=>{},durationSec=0){
  await new Promise((resolve,reject)=>{
-  const task=spawn(FFMPEG_BIN,['-hide_banner','-nostdin','-loglevel','error','-stats_period','1','-progress','pipe:2','-y','-i',input,'-map','0:v:0','-map','0:a:0?','-c','copy','-movflags','+faststart','-f','mp4',output],{stdio:['ignore','ignore','pipe']});
+  const task=spawn(FFMPEG_BIN,['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-i',input,'-map','0:v:0','-map','0:a:0?','-c','copy','-movflags','+faststart','-f','mp4',output],{stdio:['ignore','ignore','pipe']});
   let exited=false,stderr='';
   const watchdog=setTimeout(()=>{if(!exited){try{task.kill('SIGKILL');}catch(_){}}},20*60*1000);
   task.stderr.on('data',chunk=>{
@@ -50,7 +50,10 @@ async function ffmpegRemux(input,output,onProgress=()=>{},durationSec=0){
    if(exited)return;
    exited=true;clearTimeout(watchdog);
    if(code===0)return resolve();
-   const reason=/Invalid data found|moov atom not found|error reading header/i.test(stderr)?'La estructura original del archivo está dañada.':/No space left on device/i.test(stderr)?'No hay espacio temporal suficiente.':'FFmpeg no pudo remultiplexar el video con copia de pistas.';
+   const reason=/Invalid data found|moov atom not found|error reading header/i.test(stderr)?'La estructura original del archivo puede estar dañada.':/No space left on device/i.test(stderr)?'No hay espacio temporal suficiente.':/Unrecognized option|Option not found|Error splitting the argument list/i.test(stderr)?'La versión instalada de FFmpeg no reconoce una opción de conversión.':'FFmpeg no pudo remultiplexar el video con copia de pistas.';
+   const lines=stderr.split(/\r?\n/).map(x=>x.trim()).filter(x=>/error|invalid|option|failed|could not|moov|non.monotonous|corrupt|damaged|unknown|unsupported/i.test(x));
+   const diagnostic=(lines[lines.length-1]||'no_specific_detail').replace(/(?:\/[^\s:]+)+/g,'[path]').slice(0,160);
+   console.error('NÉVIX FFmpeg remux exit='+String(code)+' diagnostic='+diagnostic);
    reject(Error(reason));
   });
  });
