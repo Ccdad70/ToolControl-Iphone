@@ -1,4 +1,4 @@
-import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
+import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 
 const CHUNK_SIZE=8*1024*1024;
@@ -43,14 +43,14 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    if(url.pathname==='/api/private/upload/start'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
     const data=await readJson(req),name=safeString(data.name),size=Number(data.size);
-    const ext=name.match(/\.(mp4|webm)$/i);
+    const ext=name.match(/\.mp4$/i);
     if(!ext||!Number.isSafeInteger(size)||size<1||size>MAX_SIZE){
-     respond(res,400,{error:'invalid_video',message:'Selecciona un MP4 o WebM menor de 5 GB.'});return true;
+     respond(res,400,{error:'invalid_video',message:'Selecciona un MP4 menor de 5 GB.'});return true;
     }
     if(active.size>=MAX_SESSIONS){respond(res,429,{error:'too_many_uploads',message:'Hay otras cargas activas. Termínalas antes de continuar.'});return true;}
     const cleaned=name.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,140);
     const key=PREFIX+Date.now()+'-'+randomUUID()+'-'+cleaned;
-    const type=ext[1].toLowerCase()==='mp4'?'video/mp4':'video/webm';
+    const type='video/mp4';
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Telnyx no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
@@ -67,7 +67,17 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     s.busy=true;
     try{
      const data=await readPart(req,expected);
-     const result=await client.send(new UploadPartCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId,PartNumber:n,Body:data,ContentLength:data.length}));
+     let result;
+     for(let attempt=1;attempt<=3;attempt++){
+      try{
+       result=await client.send(new UploadPartCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId,PartNumber:n,Body:data,ContentLength:data.length}));
+       break;
+      }catch(err){
+       const http=Number(err?.$metadata?.httpStatusCode)||0;
+       if(attempt===3||(http>=400&&http<500&&http!==408&&http!==429))throw err;
+       await new Promise(resolve=>setTimeout(resolve,800*attempt));
+      }
+     }
      if(!result?.ETag)throw {status:502,error:'missing_etag',message:'Telnyx no confirmó la parte subida.'};
      s.parts.set(n,result.ETag);
      respond(res,200,{ok:true,part:n,received:data.length});
@@ -82,7 +92,17 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     if(parts.some(x=>!x.ETag)){respond(res,409,{error:'missing_parts'});return true;}
     s.busy=true;
     try{
-     await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId,MultipartUpload:{Parts:parts}}));
+     try{
+      await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId,MultipartUpload:{Parts:parts}}));
+     }catch(err){
+      // R2 puede ensamblar el archivo aunque se interrumpa la respuesta.
+      try{
+       const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:s.key}));
+       if(Number(head.ContentLength)!==s.size)throw err;
+      }catch(_){throw err;}
+     }
+     const verified=await client.send(new HeadObjectCommand({Bucket:bucket,Key:s.key}));
+     if(Number(verified.ContentLength)!==s.size)throw {status:502,error:'stored_size_mismatch',message:'R2 no confirmó el tamaño correcto de la película.'};
      active.delete(safeString(data.uploadId));
     }finally{s.busy=false;}
     let ready=null,pending=null;
