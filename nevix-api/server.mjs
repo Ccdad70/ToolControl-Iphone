@@ -156,10 +156,14 @@ async function movieLink(id){
 const privateFilms=createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin:ORIGIN});
 const server=http.createServer(async(req,res)=>{
  if(req.method==='OPTIONS'){
+  if(String(req.url||'').startsWith('/api/private/upload/part'))
+   console.log('NÉVIX MP4 upload preflight: origin_ok='+(req.headers.origin===ORIGIN));
   if(req.headers.origin&&req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
   res.writeHead(204,{'access-control-allow-origin':ORIGIN,'access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, X-Nevix-Access-Code, X-Nevix-Admin-Key','access-control-max-age':'600'});res.end();return;
  }
  const url=new URL(req.url||'/','http://localhost');
+ if(req.method==='POST'&&(url.pathname==='/api/private/upload/start'||url.pathname==='/api/private/upload/part'&&url.searchParams.get('part')==='1'))
+  console.log('NÉVIX MP4 upload incoming: endpoint='+url.pathname.split('/').pop()+' origin_ok='+(req.headers.origin===ORIGIN));
  if(url.pathname==='/health'&&req.method==='GET'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder',privateStorage:privateFilms.configured});return;}
  // Native <video> requests normally omit Origin; require a valid short-lived
  // signed media token inside privateFilms.handle instead. Do not relax CORS for
