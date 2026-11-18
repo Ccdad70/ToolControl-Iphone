@@ -24,6 +24,7 @@ function inferMovie(key){
  if(match)name=name.slice(0,match.index);
  name=name.replace(/\b(480p|720p|1080p|2160p|4k|bluray|brrip|webrip|web-dl|x264|x265|h264|h265|aac|hdr|latino|dual|spanish|castellano|dublado)\b.*$/i,'');
  name=name.replace(/[._-]+/g,' ').replace(/[\[\]()]+/g,' ').replace(/\s+/g,' ').trim();
+ if(/^\d{6,}$/.test(name))return {title:'Película pendiente',year:''};
  return {title:name.slice(0,120)||'Película pendiente',year:year||''};
 }
 function sanitizedCatalog(item){
@@ -42,6 +43,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
  const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
+ let catalog=null,cacheUntil=0,running=null;
+
  async function rawUploadPart(key,uploadId,partNumber,body,declaredSize){
   // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
   // Never include the API key in a URL, a log, or a browser response.
@@ -56,6 +59,37 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   const ETag=String(response.headers.get('etag')||'');
   if(uploadId&&!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
   return {ETag};
+ }
+ async function telnyxSignedUrl(key,ttl=3600){
+  // Telnyx requires its own presigned URL API. Never sign with the AWS SDK;
+  // doing so can reveal the API key embedded in the S3 Access Key ID.
+  const objectPath=String(key).split('/').map(encodeURIComponent).join('/');
+  const path='/v2/storage/buckets/'+encodeURIComponent(bucket)+'/'+objectPath+'/presigned_url';
+  let result;
+  try{
+   const response=await fetch('https://api.telnyx.com'+path,{
+    method:'POST',
+    headers:{Authorization:'Bearer '+telnyxKey,'Content-Type':'application/json'},
+    body:JSON.stringify({ttl}),signal:AbortSignal.timeout(20000)
+   });
+   if(!response.ok){
+    console.error('NÉVIX Telnyx presign rejected http='+response.status);
+    throw {status:502,error:'presign_unavailable',message:'Telnyx no pudo generar el enlace temporal de reproducción.'};
+   }
+   result=await response.json();
+  }catch(e){
+   if(e?.status)throw e;
+   throw {status:502,error:'presign_unavailable',message:'No se pudo conectar con Telnyx para reproducir la película.'};
+  }
+  const raw=String(result?.data?.presigned_url||result?.content?.presigned_url||'').trim();
+  let url;
+  try{url=new URL(raw);}catch(_){}
+  const host=url?.hostname?.toLowerCase()||'';
+  if(!url||url.protocol!=='https:'||!(/^[a-z0-9-]+\.telnyxcloudstorage\.com$/.test(host)||/^[a-z0-9-]+\.telnyxstorage\.com$/.test(host))||raw.includes(telnyxKey)||url.username||url.password||url.searchParams.has('X-Amz-Credential')){
+   console.error('NÉVIX Telnyx presign returned unsafe or unexpected URL');
+   throw {status:502,error:'invalid_presign',message:'Telnyx devolvió un enlace de video que no pasó la verificación de seguridad.'};
+  }
+  return raw;
  }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
@@ -226,11 +260,14 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    // Keep the routine startup probe small; a separate 8 MiB transfer was verified successfully.
    const content=Buffer.from('NEVIX-STREAM-TEST');
    await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
-   return {ok:true,reason:'bucket_read_and_stream_write_ok'};
+   stage='catalog_sync';
+   const rows=await sync(true);
+   console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready').length);
+   return {ok:true,reason:'bucket_read_write_and_catalog_sync_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
    const reason=http===401||http===403?'access_denied':http===404?'bucket_not_found_or_region_mismatch':http>=500?'telnyx_service_error':'storage_request_failed';
-   console.error('NÉVIX Telnyx probe: http='+String(http||'unknown')+' category='+reason+' stage='+stage);
+   console.error('NÉVIX Telnyx probe: http='+String(http||'unknown')+' category='+reason+' stage='+stage+' type='+String(e?.name||'unknown').slice(0,60));
    return {ok:false,reason};
   }finally{
    for(const key of [singleKey,streamKey]){try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:key}));}catch(_){}}
