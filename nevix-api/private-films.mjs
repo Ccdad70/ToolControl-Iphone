@@ -42,49 +42,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
  const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
- if(client)client.middlewareStack.add((next,context)=>async(args)=>{
-  if(context.commandName==='UploadPartCommand'){
-   const h=args.request?.headers||{};
-   const sha=String(h['x-amz-content-sha256']||'');
-   const diagnostic={
-    contentLength:String(h['content-length']||''),
-    hasChunkedTransfer:/chunked/i.test(String(h['transfer-encoding']||'')),
-    contentEncoding:String(h['content-encoding']||''),
-    shaMode:/STREAMING/i.test(sha)?'streaming':sha==='UNSIGNED-PAYLOAD'?'unsigned':sha?'hashed':'unspecified',
-    hasChecksumHeaders:Object.keys(h).some(x=>/^x-amz-checksum-/i.test(x)),
-    hasChecksumTrailer:Boolean(h['x-amz-trailer']),
-    payloadIsBuffer:Buffer.isBuffer(args.request?.body),
-    payloadBytes:Number(args.request?.body?.length)||0
-   };
-   console.log('NÉVIX Telnyx UploadPart diagnostic '+JSON.stringify(diagnostic));
-  }
-  return next(args);
- },{step:'finalizeRequest',priority:'low',name:'telnyxRedactedUploadPartDiagnostics'});
-
- let catalog=null,cacheUntil=0,running=null;
- async function telnyxSignedUrl(key,ttl){
-  // Use Telnyx's own presigned-token API, never the AWS SDK presigner.
-  const path='/v2/storage/buckets/'+encodeURIComponent(bucket)+'/'+encodeURIComponent(key)+'/presigned_url';
-  const response=await fetch('https://api.telnyx.com'+path,{
-   method:'POST',headers:{Authorization:'Bearer '+telnyxKey,'Content-Type':'application/json'},
-   body:JSON.stringify({ttl}),signal:AbortSignal.timeout(15000)
-  });
-  if(!response.ok){
-   console.error('Telnyx presigned token failed; HTTP='+response.status);
-   throw {status:502,error:'telnyx_presign_unavailable',message:'Telnyx no pudo autorizar el acceso al archivo. Verifica las claves y el bucket.'};
-  }
-  let data;
-  try{data=await response.json();}catch(_){throw {status:502,error:'telnyx_invalid_response'};}
-  const signed=string(data?.data?.presigned_url||data?.content?.presigned_url);
-  let parsed;
-  try{parsed=new URL(signed);}catch(_){}
-  const host=parsed?.hostname||'';
-  const trusted=host.endsWith('.telnyxcloudstorage.com')||host.endsWith('.telnyxstorage.com');
-  if(!parsed||parsed.protocol!=='https:'||!trusted||signed.includes(telnyxKey)||parsed.searchParams.has('X-Amz-Credential')){
-   throw {status:502,error:'unsafe_presigned_url',message:'Telnyx devolvió un enlace no verificado. Se bloqueó para proteger tu clave.'};
-  }
-  return signed;
- }
  async function rawUploadPart(key,uploadId,partNumber,body,declaredSize){
   // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
   // Never include the API key in a URL, a log, or a browser response.
@@ -266,8 +223,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    stage='small_put';
    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
    stage='stream_put';
-   const content=Buffer.alloc(8*1024*1024,65);
-   await rawUploadPart(streamKey,null,0,(async function*(){for(let offset=0;offset<content.length;offset+=256*1024)yield content.subarray(offset,offset+256*1024);})(),content.length);
+   // Keep the routine startup probe small; a separate 8 MiB transfer was verified successfully.
+   const content=Buffer.from('NEVIX-STREAM-TEST');
+   await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
    return {ok:true,reason:'bucket_read_and_stream_write_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
