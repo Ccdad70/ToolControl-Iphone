@@ -179,7 +179,7 @@ const server=http.createServer(async(req,res)=>{
 server.listen(PORT,'0.0.0.0',()=>{
  console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY));
  void privateFilms.checkConnection().then(result=>{
-  console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason);
+  console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
  }).catch(()=>console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected=false reason=probe_failed'));
 });
 
