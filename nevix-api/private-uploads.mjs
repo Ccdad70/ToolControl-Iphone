@@ -52,7 +52,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     const key=PREFIX+Date.now()+'-'+randomUUID()+'-'+cleaned;
     const type='video/mp4';
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
-    if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Telnyx no pudo iniciar la subida.'};
+    if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
     active.set(id,{key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false});
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
@@ -78,7 +78,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
        await new Promise(resolve=>setTimeout(resolve,800*attempt));
       }
      }
-     if(!result?.ETag)throw {status:502,error:'missing_etag',message:'Telnyx no confirmó la parte subida.'};
+     if(!result?.ETag)throw {status:502,error:'missing_etag',message:'Cloudflare R2 no confirmó la parte subida.'};
      s.parts.set(n,result.ETag);
      respond(res,200,{ok:true,part:n,received:data.length});
     }finally{s.busy=false;}
@@ -123,7 +123,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
   }catch(e){
    const code=e.status||e.$metadata?.httpStatusCode||502;
    console.error('NÉVIX multipart upload failed:',safeString(e?.name||e?.error||'storage_error'),String(e?.$metadata?.httpStatusCode||''));
-   respond(res,code===401||code===403?502:(code>=400&&code<500?code:502),{error:e.error||'upload_failed',message:e.status&&e.message?e.message:'Telnyx no aceptó esta parte del video. Reintenta la carga.'});
+   respond(res,code===401||code===403?502:(code>=400&&code<500?code:502),{error:e.error||'upload_failed',message:e.status&&e.message?e.message:'Cloudflare R2 no aceptó esta parte del video. Reintenta la carga.'});
    return true;
   }
  }
