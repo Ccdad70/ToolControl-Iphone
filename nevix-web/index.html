@@ -2037,7 +2037,7 @@ function privateAdminSection(){
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
  +'<label class="field">Película o video (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB)<input type="file" id="private-film-file" accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*"></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
- +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Reparar reproducción MP4 sin perder calidad</button></div>'
+ +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Revisar o preparar video (manual)</button></div>'
  +'<p class="hint">Cada video se revisa automáticamente. NÉVIX conserva el original en R2 y publica un MP4 H.264/AAC compatible: copia sin modificar el video si es posible, o convierte lo necesario. Para AC3/DTS 5.1 prepara audio estéreo y AAC 5.1. Las conversiones grandes dependen de los recursos de Render.</p>'
  +'<p id="private-remux-status" class="hint" role="status" aria-live="polite"></p>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-library">🎞 Gestionar títulos, portadas y películas</button></div>'
@@ -2087,7 +2087,7 @@ async function privateManageR2(){
   const data=await privateRequest('/api/private/admin/library',key,true);
   const files=Array.isArray(data.files)?data.files:[];
   if(!files.length){area.textContent='No hay archivos de películas en Cloudflare R2.';return;}
-  const names={ready:'Disponible',backup:'Respaldo original',review:'Pendiente de identificar',processing:'Verificando compatibilidad',processing_failed:'Verificación fallida',new:'Pendiente',unsupported:'Archivo no compatible'};
+  const names={ready:'Disponible',backup:'Respaldo original',review:'Pendiente de identificar',processing:'Convirtiendo/validando formato',processing_failed:'Preparación incompleta',new:'Pendiente',unsupported:'Archivo no compatible'};
   const total=files.reduce((x,it)=>x+Math.max(0,Number(it.size)||0),0);
   area.innerHTML='<h3>Archivos en Cloudflare R2 ('+files.length+')</h3>'
    +'<p class="hint">Espacio ocupado por estos Video: '+(total/1073741824).toFixed(2)+' GiB. Cada botón elimina solamente el archivo seleccionado, no los otros respaldos. No se puede deshacer.</p>'
@@ -2121,7 +2121,7 @@ async function privateEditR2(id){
   const data=await privateRequest('/api/private/admin/library',key,true);
   item=(data.files||[]).find(x=>x.id===id);
  }catch(error){toast('No se pudo consultar la película: '+String(error?.message||'Error.'));return;}
- if(!item||!['ready','review'].includes(item.status)){toast('Esta película todavía no está disponible para editar.');return;}
+ if(!item||!['ready','review'].includes(item.status)){toast('Esta película todavía no está disponible para editar. Verifica la conversión primero.');return;}
  const trigger=list.querySelector('[data-action="private-r2-edit"][data-id="'+id+'"]');
  const row=trigger?.closest('.source-row');
  if(!row)return;
@@ -2486,7 +2486,7 @@ async function privateRemuxR2Admin(){
    show('Comprobando si la película ya está reparada…');
    if(await confirmRepaired())return;
    const data=await privateRequest('/api/private/admin/catalog',key,true);
-   const movies=(data.items||[]).filter(x=>x.status==='ready'&&!x.remuxed);
+   const movies=(data.items||[]).filter(x=>['ready','review','processing_failed'].includes(x.status)&&!x.remuxed);
    if(!movies.length){show('No hay MP4 pendientes de reparación. Comprueba la reproducción en Películas.');return;}
    let movie=movies[0];
    if(movies.length>1){
