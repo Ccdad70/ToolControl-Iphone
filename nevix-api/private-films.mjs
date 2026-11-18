@@ -200,12 +200,12 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const type=entry.key.toLowerCase().endsWith('.webm')?'video/webm':'video/mp4';
     if(req.method==='HEAD'){
      const info=await client.send(new HeadObjectCommand({Bucket:bucket,Key:entry.key}));
-     res.writeHead(200,{'content-type':type,'content-length':String(info.ContentLength||entry.size),'accept-ranges':'bytes','cache-control':'private, no-store','access-control-allow-origin':origin,'x-content-type-options':'nosniff'});
+     res.writeHead(200,{'content-type':type,'content-length':String(info.ContentLength||entry.size),'accept-ranges':'bytes','cache-control':'private, no-store','access-control-allow-origin':origin,'access-control-expose-headers':'Content-Range, Content-Length, Accept-Ranges, Content-Type','x-content-type-options':'nosniff'});
      res.end();return;
     }
     const media=await client.send(new GetObjectCommand({Bucket:bucket,Key:entry.key,...(range?{Range:range}:{})}));
     if(!media.Body||typeof media.Body.pipe!=='function')throw {status:502,error:'missing_video_stream',message:'Telnyx no devolvió los datos de la película.'};
-    const headers={'content-type':type,'accept-ranges':'bytes','content-disposition':'inline','cache-control':'private, no-store','access-control-allow-origin':origin,'x-content-type-options':'nosniff'};
+    const headers={'content-type':type,'accept-ranges':'bytes','content-disposition':'inline','cache-control':'private, no-store','access-control-allow-origin':origin,'access-control-expose-headers':'Content-Range, Content-Length, Accept-Ranges, Content-Type','x-content-type-options':'nosniff'};
     if(media.ContentRange)headers['content-range']=String(media.ContentRange);
     if(Number.isSafeInteger(Number(media.ContentLength)))headers['content-length']=String(media.ContentLength);
     res.writeHead(media.ContentRange?206:200,headers);
@@ -327,14 +327,16 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      try{
       const path=signedVideoPath(firstReady.id).path;
       const testUrl='http://127.0.0.1:'+Number(process.env.PORT||10000)+path;
-      const tested=await fetch(testUrl,{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)});
+      const tested=await fetch(testUrl,{method:'GET',headers:{Range:'bytes=0-63',Origin:origin},signal:AbortSignal.timeout(10000)});
       const length=(await tested.arrayBuffer()).byteLength;
       const mime=String(tested.headers.get('content-type')||'');
       const ranges=String(tested.headers.get('content-range')||'');
-      const valid=tested.status===206&&mime.startsWith('video/')&&ranges.startsWith('bytes ')&&length===64;
+      const cors=String(tested.headers.get('access-control-allow-origin')||'')===origin;
+      const exposed=String(tested.headers.get('access-control-expose-headers')||'').toLowerCase().split(',').map(x=>x.trim()).includes('content-range');
+      const valid=tested.status===206&&mime.startsWith('video/')&&/^bytes 0-63\/\d+$/.test(ranges)&&length===64&&cors&&exposed;
       const bad=await fetch(testUrl.replace(/sig=[a-f0-9]{64}/,'sig='+('0'.repeat(64))),{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)});
       if(bad.body){try{await bad.body.cancel();}catch(_){}}
-      console.log('NÉVIX private video HTTP proxy probe: ok='+valid+' status='+tested.status+' mime='+mime.slice(0,35)+' received='+length+' invalid_token_rejected='+(bad.status===403));
+      console.log('NÉVIX private video HTTP proxy probe: ok='+valid+' status='+tested.status+' mime='+mime.slice(0,35)+' received='+length+' cors='+cors+' exposed_range='+exposed+' invalid_token_rejected='+(bad.status===403));
      }catch(err){console.error('NÉVIX private video HTTP proxy probe: failed type='+String(err?.name||'Error').slice(0,40));}
 
     }catch(err){
