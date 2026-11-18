@@ -2,7 +2,6 @@ import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListOb
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createPrivateRemux } from './private-remux.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { execFile } from 'node:child_process';
 
 const PREFIX='peliculas/';
 const INDEX='nevix-meta/peliculas.json';
@@ -186,6 +185,14 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   client,bucket,
   uploadObject:(key,file,size)=>rawUploadPart(key,null,0,file,size,'video/mp4'),
   finalize:async(original,key,size)=>{
+   // Verify persisted object before switching the catalog to its new copy.
+   const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
+   if(Number(head.ContentLength)!==size)throw Error('Telnyx no confirmó el tamaño de la película convertida.');
+   const check=await client.send(new GetObjectCommand({Bucket:bucket,Key:key,Range:'bytes=0-63'}));
+   const chunks=[];
+   for await(const piece of check.Body){chunks.push(piece);if(chunks.reduce((n,x)=>n+x.length,0)>=64)break;}
+   const start=Buffer.concat(chunks);
+   if(start.length<12||start.toString('ascii',4,8)!=='ftyp')throw Error('La copia guardada en Telnyx no tiene una cabecera MP4 válida.');
    const rows=await sync(true);
    const source=rows.find(x=>x.id===original.id&&x.key===original.key);
    const converted=rows.find(x=>x.key===key);
@@ -383,22 +390,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      console.error('NÉVIX Telnyx SDK video proxy probe: read_ok=false http='+String(err?.$metadata?.httpStatusCode||'unknown')+' category='+String(err?.name||'error').slice(0,40));
     }
     const playbackUrl=await telnyxSignedUrl(firstReady.key,240);
-    stage='ffprobe';
-    // Read only media metadata via FFprobe, never log signed URL or raw provider responses.
-    await new Promise(resolve=>execFile('ffprobe',
-     ['-v','error','-show_entries','format=duration,format_name:stream=codec_name,codec_type,profile,pix_fmt,width,height,sample_rate','-of','json','-probesize','1048576','-analyzeduration','3000000',playbackUrl],
-     {timeout:45000,maxBuffer:256*1024},(err,out)=>{
-      try{
-       if(err){console.log('NÉVIX FFprobe metadata: ok=false code='+String(err?.code||'unknown').slice(0,35));}
-       else{
-        const d=JSON.parse(out);
-        const streams=(d.streams||[]).map(x=>({type:x.codec_type,codec:x.codec_name,profile:String(x.profile||'').slice(0,35),pix_fmt:x.pix_fmt,w:x.width,h:x.height,sample_rate:x.sample_rate}));
-        console.log('NÉVIX FFprobe metadata: ok=true container='+String(d.format?.format_name||'').slice(0,70)+' duration_sec='+String(d.format?.duration||'unknown').slice(0,18)+' streams='+JSON.stringify(streams).slice(0,450));
-       }
-      }catch(_){console.log('NÉVIX FFprobe metadata: parsing_failed');}
-      resolve();
-     })
-    );
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
     // downloading a complete movie or exposing its link in logs.
