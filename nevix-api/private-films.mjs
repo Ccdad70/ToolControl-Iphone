@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, CopyObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -307,13 +307,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
    stage='small_put';
    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
-   try{
-    const copy=await client.send(new CopyObjectCommand({Bucket:bucket,Key:singleKey,CopySource:encodeURIComponent(bucket)+'/'+singleKey.split('/').map(encodeURIComponent).join('/'),MetadataDirective:'REPLACE',ContentType:'video/mp4'}));
-    const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:singleKey}));
-    console.log('NÉVIX Telnyx MIME metadata probe: copy_ok='+Boolean(copy?.CopyObjectResult)+' mime='+String(head.ContentType||'').slice(0,50));
-   }catch(copyErr){
-    console.log('NÉVIX Telnyx MIME metadata probe: copy_failed http='+String(copyErr?.$metadata?.httpStatusCode||'unknown')+' type='+String(copyErr?.name||'Unknown').slice(0,45));
-   }
    stage='stream_put';
    // Keep the routine startup probe small; a separate 8 MiB transfer was verified successfully.
    const content=Buffer.from('NEVIX-STREAM-TEST');
@@ -351,43 +344,10 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
     // downloading a complete movie or exposing its link in logs.
-    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-8191'},signal:AbortSignal.timeout(20000)});
+    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(20000)});
     const playbackCode=playback.status;
-    if(playbackCode!==206&&playbackCode!==200){
-     if(playback.body){try{await playback.body.cancel();}catch(_){}}
-     throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
-    }
-    const headers={type:String(playback.headers.get('content-type')||''),range:String(playback.headers.get('content-range')||'').slice(0,100),length:String(playback.headers.get('content-length')||'')};
-    const firstBytes=Buffer.from(await playback.arrayBuffer());
-    const mp4Header=firstBytes.length>=12&&firstBytes.toString('ascii',4,8)==='ftyp';
-    const fileType=mp4Header?'mp4_ftyp':firstBytes.length>4&&firstBytes.toString('ascii',0,4)==='\\x1aE\\xdf\\xa3'?'webm':'unknown';
-    console.log('NÉVIX Telnyx video format probe: http='+playbackCode+' type='+headers.type.slice(0,55)+' range='+headers.range+' content_length='+headers.length+' bytes='+firstBytes.length+' signature='+fileType);
-    if(mp4Header){
-     // Read only ISO BMFF top-level box headers; never transfer movie frames.
-     const total=Number((headers.range.match(/\/(\d+)$/)||[])[1]||0);
-     let pos=0,boxes=[],foundMoov=false;
-     for(let count=0;count<12&&pos+8<=total;count++){
-      let block;
-      if(pos+16<=firstBytes.length)block=firstBytes.subarray(pos,pos+16);
-      else{
-       const r=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes='+pos+'-'+(pos+15)},signal:AbortSignal.timeout(10000)});
-       if(r.status!==206){if(r.body)await r.body.cancel();break;}
-       block=Buffer.from(await r.arrayBuffer());
-      }
-      if(block.length<8)break;
-      let length=block.readUInt32BE(0),type=block.toString('ascii',4,8);
-      if(!/^[a-zA-Z0-9 ]{4}$/.test(type))break;
-      if(length===1){if(block.length<16)break;length=Number(block.readBigUInt64BE(8));}
-      if(length===0)length=total-pos;
-      if(!Number.isSafeInteger(length)||length<8||pos+length>total)break;
-      boxes.push(type+':'+length);
-      if(type==='moov')foundMoov=true;
-      pos+=length;
-     }
-     const samples=['avc1','avc3','hvc1','hev1','av01','vp09','mp4a','ac-3','ec-3','encv','enca','pssh','mvex','moof'];
-     const signatures=samples.filter(x=>firstBytes.includes(Buffer.from(x)));
-     console.log('NÉVIX Telnyx mp4 container probe: top_level='+boxes.join(',').slice(0,290)+' moov_found='+foundMoov+' video_signatures='+signatures.join(',')+' total_bytes='+total);
-    }
+    if(playback.body){try{await playback.body.cancel();}catch(_){}}
+    if(playbackCode!==206&&playbackCode!==200)throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
     console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
    return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok'};
