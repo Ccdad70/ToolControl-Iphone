@@ -17,7 +17,7 @@ export function mediaToolsReady(){
  return {ffmpeg:!ffmpeg.error&&ffmpeg.status===0,ffprobe:!ffprobe.error&&ffprobe.status===0};
 }
 
-const MAX_SIZE=4*1024*1024*1024;
+const MAX_SIZE=6*1024*1024*1024;
 const JOBS_LIMIT=10;
 const MULTIPART_CHUNK=5*1024*1024;
 async function withRetry(operation){
@@ -155,9 +155,9 @@ async function detectMp4Layout(path,size){
    }
    if(length===0)length=size-offset;
    if(length<8||length>size-offset)break;
-   if(atom==='moov'){foundMoov=true;if(!foundMdat)moovBeforeMdat=true;}
+   if(atom==='moov'){foundMoov=true;if(!foundMdat)moovBeforeMdat=true;else break;}
    if(atom==='moof')fragmented=true;
-   if(atom==='mdat'){foundMdat=true;break;}
+   if(atom==='mdat'){foundMdat=true;if(foundMoov)break;}
    offset+=length;
   }
  }finally{await fd.close();}
