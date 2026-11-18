@@ -191,7 +191,10 @@ server.listen(PORT,'0.0.0.0',()=>{
  console.log('NÉVIX R2 MP4 repair readiness: ffmpeg='+repairTools.ffmpeg+' ffprobe='+repairTools.ffprobe);
  void privateFilms.checkConnection().then(result=>{
   console.log('NÉVIX Cloudflare R2 storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
-  if(result.ok)return privateFilms.checkPlayback();
+  if(result.ok){
+   void privateFilms.recoverAutoJobs().catch(e=>console.error('NÉVIX MP4 auto recovery failed: '+String(e?.name||'Error')));
+   return privateFilms.checkPlayback();
+  }
  }).catch(()=>console.log('NÉVIX Cloudflare R2 storage probe: configured='+privateFilms.configured+' connected=false reason=probe_failed'));
 });
 
