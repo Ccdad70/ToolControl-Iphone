@@ -186,13 +186,18 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname.startsWith('/api/private/upload/')&&!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 todavía no está configurado o no superó la prueba de subida. Comprueba las credenciales.'});
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
-    const rows=await sync(true);
-    return reply(res,200,{items:rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''})),ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length});
+    const rows=await sync(true),items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''}));
+    const pendingItems=items.filter(x=>x.status!=='ready');
+    console.log('NÉVIX R2 admin catalog: movies='+items.length+' pending='+pendingItems.length);
+    return reply(res,200,{items,pendingItems,ready:items.length-pendingItems.length,pending:pendingItems.length});
    }
    if(url.pathname==='/api/private/upload')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV para subir películas con el nuevo sistema seguro.'});
    if(url.pathname==='/api/private/sync'&&req.method==='POST'){
     const rows=await sync(true);
-    return reply(res,200,{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length});
+    const items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||''}));
+    const pendingItems=items.filter(x=>x.status!=='ready');
+    console.log('NÉVIX R2 sync: movies='+items.length+' pending='+pendingItems.length);
+    return reply(res,200,{ready:items.length-pendingItems.length,pending:pendingItems.length,pendingItems});
    }
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
