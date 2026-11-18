@@ -212,7 +212,16 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   }
  }
  async function checkConnection(){
-  if(!configured)return {ok:false,reason:'incomplete_env'};
+  if(!configured){
+   const issues=[];
+   if(telnyxKey.length<16)issues.push('TELNYX_API_KEY');
+   if(!validBucket)issues.push('TELNYX_STORAGE_BUCKET');
+   if(!validRegion||!supportsBrowser)issues.push('TELNYX_STORAGE_REGION');
+   if(family.length<12)issues.push('NEVIX_FAMILY_ACCESS_CODE');
+   if(admin.length<16)issues.push('NEVIX_PRIVATE_ADMIN_KEY');
+   if(family&&family===admin)issues.push('FAMILY_AND_ADMIN_SAME');
+   return {ok:false,reason:'incomplete_env',issues};
+  }
   try{
    // Read-only check against the selected Telnyx bucket; no object or settings are changed.
    await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:1}));
