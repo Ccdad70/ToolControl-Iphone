@@ -85,6 +85,20 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   }
   return signed;
  }
+ async function rawUploadPart(key,uploadId,partNumber,body){
+  // Telnyx documents that the AWS SigV4 signature itself is ignored; only the Access Key ID is validated.
+  // Never include the API key in a URL, a log, or a browser response.
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const date=stamp.slice(0,8);
+  const authorization='AWS4-HMAC-SHA256 Credential='+telnyxKey+'/'+date+'/test/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature='+('0'.repeat(64));
+  const objectKey=key.split('/').map(encodeURIComponent).join('/');
+  const uri='https://'+region+'.telnyxcloudstorage.com/'+encodeURIComponent(bucket)+'/'+objectKey+'?partNumber='+partNumber+'&uploadId='+encodeURIComponent(uploadId);
+  const response=await fetch(uri,{method:'PUT',headers:{Authorization:authorization,'x-amz-date':stamp,'Content-Type':'application/octet-stream','Content-Length':String(body.length)},body,signal:AbortSignal.timeout(60000)});
+  if(!response.ok)throw {name:'TelnyxPartHttpError',$metadata:{httpStatusCode:response.status}};
+  const ETag=String(response.headers.get('etag')||'');
+  if(!ETag)throw {name:'MissingTelnyxPartETag',$metadata:{httpStatusCode:502}};
+  return {ETag};
+ }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
  async function body(req){
@@ -241,7 +255,13 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    uploadId=start.UploadId;
    if(!uploadId)throw {name:'MissingUploadId'};
    probeStage='upload_part';
-   const part=await client.send(new UploadPartCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,PartNumber:1,Body:payload,ContentLength:payload.length}));
+   let part;
+   try{part=await client.send(new UploadPartCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,PartNumber:1,Body:payload,ContentLength:payload.length}));}
+   catch(e){
+    console.log('NÉVIX Telnyx SDK UploadPart rejected http='+String(e?.$metadata?.httpStatusCode||'unknown')+'; testing provider-native request.');
+    probeStage='raw_upload_part';
+    part=await rawUploadPart(probeKey,uploadId,1,payload);
+   }
    if(!part.ETag)throw {name:'MissingPartETag'};
    probeStage='complete_multipart';
    await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:probeKey,UploadId:uploadId,MultipartUpload:{Parts:[{PartNumber:1,ETag:part.ETag}]}}));
