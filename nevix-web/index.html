@@ -2237,12 +2237,20 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
  let active=true,mediaSource=null,sourceBuffer=null,objectUrl='',offset=0;
  const CHUNK=2*1024*1024;
  const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+ let startupGuard=null;
  const session={cancel(){
   active=false;
+  if(startupGuard){clearTimeout(startupGuard);startupGuard=null;}
   controller.abort();
   if(objectUrl){try{URL.revokeObjectURL(objectUrl);}catch(_){}objectUrl='';}
  }};
  privateMediaSession=session;
+ startupGuard=setTimeout(()=>{
+  if(active&&(Number(video.currentTime)||0)<0.25){
+   session.cancel();
+   onError('El video sigue en 0:00. Este archivo necesita una conversión de contenedor antes de poder reproducirse en este navegador.');
+  }
+ },30000);
  const rangeFetch=async(start,end)=>{
   const response=await fetch(url,{method:'GET',headers:{Range:'bytes='+start+'-'+end},cache:'no-store',signal:controller.signal});
   if(response.status!==206)throw Error('El servidor no entregó el fragmento solicitado (HTTP '+response.status+').');
@@ -2342,6 +2350,7 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
  };
  void run().catch(e=>{
   if(!active||e?.name==='AbortError')return;
+  session.cancel();
   onError(e?.message||'No se pudo reproducir el video fragmentado.');
  });
  return session;
@@ -2543,9 +2552,7 @@ function play(id,sourceIndex=0){
    try{
     engine='MP4 fragmentado';
     startPrivateFragmentedMP4({url,video,onStatus:msg=>{if(status)status.textContent=msg;},onError:msg=>{if(state.playing===it.id)stopAndReport(msg,'El motor de MP4 fragmentado no consiguió reproducir el archivo.');}});
-    watchdogAfter(26000,'El video no empezó',()=>{
-     if(video.currentTime<0.25&&video.readyState<3)stopAndReport('La película sigue sin iniciar en este dispositivo. Se necesita convertirla a MP4 estándar.','El archivo fragmentado no produjo imagen en 26 segundos.');
-    });
+
    }catch(e){stopAndReport(String(e.message||'Este navegador no admite reproducción MP4 fragmentada.'));}
   }else{
    video.src=url;
