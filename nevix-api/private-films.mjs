@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -101,7 +101,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(prior&&prior.etag===o.etag)return prior;
     return {id:'priv-'+sha(o.key).slice(0,24),key:o.key,size:o.size,etag:o.etag,addedAt:new Date().toISOString(),title:'',year:'',image:'',description:'',status:'new'};
    });
-   let processed=0,changed=updated.length!==records.length||updated.some(x=>!old.has(x.key));
+   let processed=0,changed=updated.length!==records.length||updated.some(x=>!old.has(x.key)||old.get(x.key)?.etag!==x.etag);
    for(const it of updated){
     if(it.status==='new'&&processed<8){await enrich(it);processed++;changed=true;}
    }
@@ -132,7 +132,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const rows=await sync();
     const item=rows.find(x=>x.id===id&&x.status==='ready'&&SUPPORTED.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
-    const signed=await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:item.key,ResponseContentType:item.key.endsWith('.webm')?'video/webm':'video/mp4'}),{expiresIn:21600});
+    const signed=await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:item.key}),{expiresIn:21600});
     return reply(res,200,{url:signed,expiresIn:21600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
