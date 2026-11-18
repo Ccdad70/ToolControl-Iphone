@@ -6,7 +6,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 const PREFIX='peliculas/';
 const INDEX='nevix-meta/peliculas.json';
 const MAX_UPLOAD=5*1024*1024*1024-1024;
-const SUPPORTED=/\.mp4$/i;
+const SUPPORTED=/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i;
+const OUTPUT_MP4=/\.mp4$/i;
 const PER_PAGE=1000;
 const sha=x=>createHash('sha256').update(String(x)).digest('hex');
 const string=v=>String(v||'').trim();
@@ -19,7 +20,7 @@ function safeSame(a,b){
 function inferMovie(key){
  let name=key.split('/').pop()||'';
  try{name=decodeURIComponent(name);}catch(_){}
- name=name.replace(/^[0-9]{13}-[a-f0-9-]{36}-/i,'').replace(/\.mp4$/i,'');
+ name=name.replace(/^[0-9]{13}-[a-f0-9-]{36}-/i,'').replace(SUPPORTED,'');
  const match=name.match(/(?:^|[\s.(\[-])((?:19|20)\d{2})(?:[\s.)\]-]|$)/);
  const year=match?Number(match[1]):null;
  if(match)name=name.slice(0,match.index);
@@ -89,7 +90,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   do{
    const result=await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:PER_PAGE,...(cursor?{ContinuationToken:cursor}:{})}));
    for(const entry of result.Contents||[]){
-    if(entry.Key&&entry.Size>0&&!seen.has(entry.Key)&&entry.Key.startsWith(PREFIX)&&/\.mp4$/i.test(entry.Key)){
+    if(entry.Key&&entry.Size>0&&!seen.has(entry.Key)&&entry.Key.startsWith(PREFIX)&&SUPPORTED.test(entry.Key)){
      seen.add(entry.Key);objects.push({key:entry.Key,size:Number(entry.Size)||0,etag:entry.ETag||''});
     }
    }
@@ -123,7 +124,12 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    });
    let processed=0,changed=updated.length!==records.length||updated.some(x=>!old.has(x.key)||old.get(x.key)?.etag!==x.etag);
    for(const it of updated){
-    if(it.status==='new'&&processed<8){await enrich(it);processed++;changed=true;}
+    if(it.status==='new'&&processed<8){
+     await enrich(it);
+     it.publicationStatus=it.status==='ready'?'ready':'review';
+     it.status='processing';
+     processed++;changed=true;
+    }
    }
    catalog=updated;
    if(changed)await saveIndex();
@@ -164,7 +170,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  async function autoValidateUploadedMovie(key){
   const rows=await sync(true),entry=rows.find(x=>x.key===key);
   if(!entry)throw Error('No se encontró el archivo MP4 recién subido.');
-  entry.publicationStatus=entry.status==='ready'?'ready':'review';
+  entry.publicationStatus=entry.publicationStatus|| (entry.status==='ready'?'ready':'review');
   entry.status='processing';entry.validationError='';
   await saveIndex();
   const result=remux.start(entry,{auto:true});
@@ -197,7 +203,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const id=string(url.searchParams.get('id')),expiration=string(url.searchParams.get('expires'));
     if(!checkVideoToken(id,expiration,string(url.searchParams.get('sig'))))return reply(res,403,{error:'video_access_expired',message:'El acceso temporal al video expiró.'});
     const rows=await sync();
-    const entry=rows.find(x=>x.id===id&&x.status==='ready'&&x.key.startsWith(PREFIX)&&SUPPORTED.test(x.key));
+    const entry=rows.find(x=>x.id===id&&x.status==='ready'&&x.key.startsWith(PREFIX)&&OUTPUT_MP4.test(x.key));
     if(!entry)return reply(res,404,{error:'video_unavailable'});
     const range=string(req.headers.range);
     if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>70))return reply(res,416,{error:'invalid_range'});
@@ -228,13 +234,13 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied',message:'Introduce tu código de acceso familiar.'});
     const rows=await sync();
-    return reply(res,200,{movies:rows.filter(x=>x.status==='ready').map(sanitizedCatalog),pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length,updatedAt:new Date().toISOString()});
+    return reply(res,200,{movies:rows.filter(x=>x.status==='ready'&&OUTPUT_MP4.test(x.key)).map(sanitizedCatalog),pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length,updatedAt:new Date().toISOString()});
    }
    if(url.pathname==='/api/private/stream'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied'});
     const id=string(url.searchParams.get('id')),rows=await sync();
-    const item=rows.find(x=>x.id===id&&x.status==='ready'&&SUPPORTED.test(x.key));
+    const item=rows.find(x=>x.id===id&&x.status==='ready'&&OUTPUT_MP4.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
     const proxy=signedVideoPath(item.id);
     return reply(res,200,{url:'https://nevix-catalog-api.onrender.com'+proxy.path,expiresIn:proxy.expiresIn,
@@ -313,7 +319,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
     if(!entry||!SUPPORTED.test(entry.key))return reply(res,404,{error:'not_found'});
-    if(!['ready','review'].includes(entry.status))return reply(res,409,{error:'not_editable',message:'La película está en verificación o es un respaldo y no puede editarse.'});
+    if(!['ready','review'].includes(entry.status)||!OUTPUT_MP4.test(entry.key))return reply(res,409,{error:'not_editable',message:'Primero debe completarse la conversión de esta película a MP4.'});
     const newTitle=string(arg.title).slice(0,130),newYear=string(arg.year).slice(0,4);
     if(newTitle.length<2||newYear&&!/^(19|20)\d{2}$/.test(newYear))return reply(res,400,{error:'invalid_metadata'});
     const meta=await tmdbSearchPoster(newTitle,newYear,'movie');
