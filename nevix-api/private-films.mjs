@@ -1,5 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -30,12 +29,51 @@ function sanitizedCatalog(item){
  return {id:item.id,title:item.title,kind:'movie',year:item.year||'',image:item.image||'',description:item.description||'',privateMovie:true,category:'Cine',source:'NÉVIX TV',addedAt:item.addedAt||'',size:item.size||0};
 }
 export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin}){
- const account=string(process.env.R2_ACCOUNT_ID),accessKey=string(process.env.R2_ACCESS_KEY_ID),secret=string(process.env.R2_SECRET_ACCESS_KEY),bucket=string(process.env.R2_BUCKET);
+ // Telnyx uses the API key as S3 Access Key ID (with a dummy signing secret).
+ // IMPORTANT: never use AWS S3 getSignedUrl here: it would disclose the Telnyx API key!
+ const telnyxKey=string(process.env.TELNYX_API_KEY);
+ const bucket=string(process.env.TELNYX_STORAGE_BUCKET);
+ const region=string(process.env.TELNYX_STORAGE_REGION)||'us-east-1';
  const family=string(process.env.NEVIX_FAMILY_ACCESS_CODE),admin=string(process.env.NEVIX_PRIVATE_ADMIN_KEY);
- const validAccount=/^[a-z0-9]{16,64}$/i.test(account),validBucket=/^[a-z0-9][a-z0-9-]{1,62}$/i.test(bucket);
- const configured=Boolean(validAccount&&validBucket&&accessKey&&secret&&family.length>=12&&admin.length>=16&&family!==admin);
- const client=configured?new S3Client({region:'auto',endpoint:'https://'+account+'.r2.cloudflarestorage.com',forcePathStyle:true,credentials:{accessKeyId:accessKey,secretAccessKey:secret},maxAttempts:2}):null;
- let catalog=null,cacheUntil=0,running=null;
+ const validBucket=/^[a-z0-9][a-z0-9.-]{1,62}[a-z0-9]$/.test(bucket);
+ const validRegion=/^(?:us-(?:central|east|west)-1|eu-central-1|ap-southeast-1|ca-central-1)$/.test(region);
+ // EU does not currently support the private browser upload/CORS workflow.
+ const supportsBrowser=region!=='eu-central-1';
+ const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
+ const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
+ let catalog=null,cacheUntil=0,running=null,corsUntil=0;
+ async function ensureBrowserCors(){
+  if(Date.now()<corsUntil)return;
+  // Restrict browser uploads to NÉVIX, without making the bucket public.
+  await client.send(new PutBucketCorsCommand({Bucket:bucket,CORSConfiguration:{CORSRules:[{
+   AllowedOrigins:[origin],AllowedMethods:['GET','HEAD','PUT'],
+   AllowedHeaders:['*'],ExposeHeaders:['ETag','Content-Length','Accept-Ranges','Content-Range'],MaxAgeSeconds:1800
+  }]}}));
+  corsUntil=Date.now()+3600000;
+ }
+ async function telnyxSignedUrl(key,ttl){
+  // Use Telnyx's own presigned-token API, never the AWS SDK presigner.
+  const path='/v2/storage/buckets/'+encodeURIComponent(bucket)+'/'+encodeURIComponent(key)+'/presigned_url';
+  const response=await fetch('https://api.telnyx.com'+path,{
+   method:'POST',headers:{Authorization:'Bearer '+telnyxKey,'Content-Type':'application/json'},
+   body:JSON.stringify({ttl}),signal:AbortSignal.timeout(15000)
+  });
+  if(!response.ok){
+   console.error('Telnyx presigned token failed; HTTP='+response.status);
+   throw {status:502,error:'telnyx_presign_unavailable',message:'Telnyx no pudo autorizar el acceso al archivo. Verifica las claves y el bucket.'};
+  }
+  let data;
+  try{data=await response.json();}catch(_){throw {status:502,error:'telnyx_invalid_response'};}
+  const signed=string(data?.content?.presigned_url);
+  let parsed;
+  try{parsed=new URL(signed);}catch(_){}
+  const host=parsed?.hostname||'';
+  const trusted=host.endsWith('.telnyxcloudstorage.com')||host.endsWith('.telnyxstorage.com');
+  if(!parsed||parsed.protocol!=='https:'||!trusted||signed.includes(telnyxKey)||parsed.searchParams.has('X-Amz-Credential')){
+   throw {status:502,error:'unsafe_presigned_url',message:'Telnyx devolvió un enlace no verificado. Se bloqueó para proteger tu clave.'};
+  }
+  return signed;
+ }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
  async function body(req){
@@ -116,9 +154,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   try{
    if(url.pathname==='/api/private/status'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
-    return reply(res,200,{configured,provider:'Cloudflare R2',supports:['mp4','webm']});
+    return reply(res,200,{configured,provider:'Telnyx Storage',supports:['mp4','webm']});
    }
-   if(!configured)return reply(res,503,{error:'storage_not_configured',message:'El almacenamiento privado aún no está configurado.'});
+   if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Telnyx Storage aún no está configurado. Utiliza una región US compatible y configura las credenciales.'});
    if(url.pathname==='/api/private/catalog'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied',message:'Introduce tu código de acceso familiar.'});
@@ -132,8 +170,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const rows=await sync();
     const item=rows.find(x=>x.id===id&&x.status==='ready'&&SUPPORTED.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
-    const signed=await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:item.key}),{expiresIn:21600});
-    return reply(res,200,{url:signed,expiresIn:21600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
+    const signed=await telnyxSignedUrl(item.key,3600);
+    return reply(res,200,{url:signed,expiresIn:3600,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
@@ -148,7 +186,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const safe=original.replace(/[^\p{L}\p{N} ._()-]/gu,'_').replace(/\s+/g,' ').slice(0,150);
     const key=PREFIX+Date.now()+'-'+randomUUID()+'-'+safe;
     const type=ext[1].toLowerCase()==='webm'?'video/webm':'video/mp4';
-    const signed=await getSignedUrl(client,new PutObjectCommand({Bucket:bucket,Key:key,ContentType:type}),{expiresIn:7200});
+    await ensureBrowserCors();
+    const signed=await telnyxSignedUrl(key,7200);
     return reply(res,200,{uploadUrl:signed,method:'PUT',contentType:type,expiresIn:7200,keyHint:key.split('/').pop()});
    }
    if(url.pathname==='/api/private/sync'&&req.method==='POST'){
@@ -169,7 +208,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    return reply(res,404,{error:'not_found'});
   }catch(e){
    console.error('NÉVIX private storage request failed:',String(e?.name||'Error'),String(e?.$metadata?.httpStatusCode||''));
-   return reply(res,e.status||502,{error:e.error||'storage_unavailable',message:e.message&&e.status?e.message:'No se pudo consultar el servidor privado. Comprueba la configuración R2.'});
+   return reply(res,e.status||502,{error:e.error||'storage_unavailable',message:e.message&&e.status?e.message:'No se pudo consultar Telnyx Storage. Revisa el bucket, la región, el CORS y las credenciales.'});
   }
  }
  return {handle,configured};
