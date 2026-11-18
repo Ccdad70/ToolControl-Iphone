@@ -2345,6 +2345,10 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
    if(!active)return;
    await append(part.bytes);
    offset+=part.bytes.length;
+   // Do not burn paid bandwidth downloading a full movie if the browser
+   // has not accepted any media after the initial 18 MiB.
+   if(offset>=18*1024*1024&&video.buffered.length===0&&(Number(video.currentTime)||0)<0.1)
+    throw Error('El navegador no pudo interpretar los primeros fragmentos de este MP4. El archivo necesita remultiplexado a MP4 estándar.');
   }
   if(active&&mediaSource.readyState==='open'&&!sourceBuffer.updating){try{mediaSource.endOfStream();}catch(_){}}
  };
