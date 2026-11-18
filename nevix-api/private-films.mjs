@@ -30,7 +30,7 @@ function sanitizedCatalog(item){
  return {id:item.id,title:item.title,kind:'movie',year:item.year||'',image:item.image||'',description:item.description||'',privateMovie:true,category:'Cine',source:'NÉVIX TV',addedAt:item.addedAt||'',size:item.size||0};
 }
 export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin}){
- // Telnyx SDK integration signs requests with the API key as both S3 access key and signing secret.
+ // Telnyx authenticates the S3 Access Key ID; the signing secret must be a placeholder, never repeat a real API key.
  // IMPORTANT: never use AWS S3 getSignedUrl here: it would disclose the Telnyx API key!
  const telnyxKey=string(process.env.TELNYX_API_KEY);
  const bucket=string(process.env.TELNYX_STORAGE_BUCKET);
@@ -41,7 +41,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  // EU does not currently support the private browser upload/CORS workflow.
  const supportsBrowser=region!=='eu-central-1';
  const configured=Boolean(validBucket&&validRegion&&supportsBrowser&&telnyxKey.length>=16&&family.length>=12&&admin.length>=16&&family!==admin);
- const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:telnyxKey},maxAttempts:2}):null;
+ const client=configured?new S3Client({region,endpoint:'https://'+region+'.telnyxcloudstorage.com',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:telnyxKey,secretAccessKey:'telnyx-s3-secret-ignored'},maxAttempts:2}):null;
  if(client)client.middlewareStack.add((next,context)=>async(args)=>{
   if(context.commandName==='UploadPartCommand'){
    const h=args.request?.headers||{};
@@ -116,9 +116,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  async function listMovies(){
   const objects=[],seen=new Set();let cursor;
   do{
-   const result=await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:PREFIX,MaxKeys:PER_PAGE,...(cursor?{ContinuationToken:cursor}:{})}));
+   const result=await client.send(new ListObjectsV2Command({Bucket:bucket,MaxKeys:PER_PAGE,...(cursor?{ContinuationToken:cursor}:{})}));
    for(const entry of result.Contents||[]){
-    if(entry.Key&&entry.Size>0&&!seen.has(entry.Key)&&/\.(mp4|webm|mkv)$/i.test(entry.Key)){
+    if(entry.Key&&entry.Size>0&&!seen.has(entry.Key)&&(entry.Key.startsWith(PREFIX)||!entry.Key.includes('/'))&&/\.(mp4|webm|mkv)$/i.test(entry.Key)){
      seen.add(entry.Key);objects.push({key:entry.Key,size:Number(entry.Size)||0,etag:entry.ETag||''});
     }
    }
@@ -230,7 +230,13 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    // Verify multipart write + cleanup with a unique test object, never touch movies.
    probeKey='nevix-meta/.nevix-probe-'+randomUUID()+'.bin';
    probeStage='create_multipart';
-   const payload=Buffer.from('NEVIX-MULTIPART-CONNECTION-TEST');
+   probeStage='put_object';
+   const singleKey='nevix-meta/.single-probe-'+randomUUID()+'.bin';
+   try{
+    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
+   }finally{try{await client.send(new DeleteObjectCommand({Bucket:bucket,Key:singleKey}));}catch(_){}}
+   probeStage='create_multipart';
+   const payload=Buffer.alloc(6*1024*1024,0);
    const start=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:probeKey,ContentType:'application/octet-stream'}));
    uploadId=start.UploadId;
    if(!uploadId)throw {name:'MissingUploadId'};
