@@ -2026,7 +2026,7 @@ function privateAdminSection(){
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
  +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Subida MP4 segura a Cloudflare R2 en bloques de 8 MB, con reintentos automáticos. Para identificar la portada, utiliza un nombre como Gladiator.2000.mp4. Los archivos con números se identifican en Revisar pendientes.</p>'
- +'</section>'; +'</section>';
+ +'</section>';
 }
 const originalRenderAdminForPrivateStorage=renderAdmin;
 renderAdmin=function(){
