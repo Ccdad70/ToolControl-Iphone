@@ -76,28 +76,37 @@ async function tmdbSearchPoster(title,year,kind){
  if(!TMDB_KEY||!title)return null;
  const type=kind==='series'?'tv':'movie';
  return single('tmdbFind:'+type+':'+title+':'+year,async()=>{
-  const u=new URL('https://api.themoviedb.org/3/search/'+type);
-  u.searchParams.set('language','en-US');
-  u.searchParams.set('query',String(title));
-  u.searchParams.set('include_adult','false');
-  const expectedYear=Number(year)||0;
-  if(expectedYear>1900&&expectedYear<2100)u.searchParams.set(type==='tv'?'first_air_date_year':'year',String(expectedYear));
+  const desired=cleanFilmTitle(title),expectedYear=Number(year)||0;
   const token=TMDB_KEY.startsWith('eyJ')&&TMDB_KEY.length>100;
-  if(!token)u.searchParams.set('api_key',TMDB_KEY);
-  const response=await fetch(u,{headers:token?{Authorization:'Bearer '+TMDB_KEY}:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
-  if(!response.ok)return null;
-  const data=await response.json();
-  const desired=cleanFilmTitle(title);
-  const found=(Array.isArray(data.results)?data.results:[]).find(x=>{
-   const poster=String(x?.poster_path||'');
-   const names=[x?.title,x?.original_title,x?.name,x?.original_name].map(cleanFilmTitle);
-   const date=String(x?.release_date||x?.first_air_date||'');
-   const yr=Number(date.slice(0,4))||0;
-   return /^\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)&&names.includes(desired)&&(!expectedYear||!yr||Math.abs(yr-expectedYear)<=1);
-  });
-  return found?{image:'https://image.tmdb.org/t/p/w500'+found.poster_path,overview:String(found.overview||'').slice(0,350)}:null;
+  // Los administradores pueden escribir títulos españoles, originales o ingleses.
+  for(const language of ['es-ES','en-US']){
+   const u=new URL('https://api.themoviedb.org/3/search/'+type);
+   u.searchParams.set('language',language);
+   u.searchParams.set('query',String(title));
+   u.searchParams.set('include_adult','false');
+   if(expectedYear>1900&&expectedYear<2100)u.searchParams.set(type==='tv'?'first_air_date_year':'year',String(expectedYear));
+   if(!token)u.searchParams.set('api_key',TMDB_KEY);
+   const response=await fetch(u,{headers:token?{Authorization:'Bearer '+TMDB_KEY}:{Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+   if(!response.ok)continue;
+   const data=await response.json();
+   const found=(Array.isArray(data.results)?data.results:[]).find(x=>{
+    const poster=String(x?.poster_path||'');
+    const names=[x?.title,x?.original_title,x?.name,x?.original_name].map(cleanFilmTitle);
+    const date=String(x?.release_date||x?.first_air_date||'');
+    const releaseYear=Number(date.slice(0,4))||0;
+    return /^\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/.test(poster)&&names.includes(desired)&&(!expectedYear||!releaseYear||Math.abs(releaseYear-expectedYear)<=1);
+   });
+   if(found)return {
+    image:'https://image.tmdb.org/t/p/w500'+found.poster_path,
+    overview:String(found.overview||'').slice(0,350),
+    matchedTitle:String(found.title||found.name||found.original_title||title).slice(0,130),
+    matchedYear:String(found.release_date||found.first_air_date||'').slice(0,4)
+   };
+  }
+  return null;
  });
 }
+
 async function decorate(rows,kind){
  const items=rows.slice(0,24).map(x=>({id:String(x.id),title:String(x.title).slice(0,130),year:String(x.year||''),rank:0,image:null,overview:'',imageProvider:null,tmdbId:String(x.tmdb_id||'')}));
  if(!TMDB_KEY)return items;
