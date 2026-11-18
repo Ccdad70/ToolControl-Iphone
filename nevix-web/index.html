@@ -1989,8 +1989,12 @@ async function playPrivateFilm(item){
  try{
   const result=await privateRequest('/api/private/stream?id='+encodeURIComponent(item.id),privateFamilyCode);
   if(!/^https:\/\//i.test(String(result.url||'')))throw Error('El servidor no devolvió un enlace de reproducción válido.');
-  item.url=result.url;
-  item.privateUrlExpires=Date.now()+Math.max(60,Number(result.expiresIn)||600)*1000;
+  item.privateFallbackUrl=typeof result.fallbackPath==='string'&&/^\/api\/private\/video\?/.test(result.fallbackPath)?WATCHMODE_BACKEND+result.fallbackPath:'';
+  item.privateFallbackExpiresIn=Math.max(60,Number(result.fallbackExpiresIn)||900);
+  const proxyPreferred=Boolean(result.preferProxy||item.privateForceProxy)&&Boolean(item.privateFallbackUrl);
+  item.privateProxyActive=proxyPreferred;
+  item.url=proxyPreferred?item.privateFallbackUrl:result.url;
+  item.privateUrlExpires=Date.now()+Math.max(60,proxyPreferred?item.privateFallbackExpiresIn:(Number(result.expiresIn)||240))*1000;
   play(item.id);
  }catch(e){toast('No se pudo reproducir: '+String(e.message||'Error del servidor.'));}
 }
@@ -2310,6 +2314,16 @@ function play(id,sourceIndex=0){
  const isHLS=/\.m3u8(?:[?#]|$)/i.test(url);
  els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><video id="nevix-player" class="player-video" controls autoplay playsinline></video><div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}${it.featuredVenezuela?'<button class="btn btn-sm" data-action="unmute-player" id="player-unmute" hidden>🔊 Activar sonido</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
  const video=$('#nevix-player'),status=$('#player-status'),details=$('#player-details');
+ const openPrivateFallback=()=>{
+  if(!it.privateMovie||it.privateProxyActive||!it.privateFallbackUrl)return false;
+  it.privateProxyActive=true;
+  it.privateForceProxy=true;
+  it.url=it.privateFallbackUrl;
+  it.privateUrlExpires=Date.now()+Math.max(60,Number(it.privateFallbackExpiresIn)||900)*1000;
+  if(status)status.textContent='Conectando al reproductor compatible con tu película…';
+  setTimeout(()=>{if(state.playing===it.id)play(it.id);},0);
+  return true;
+ };
  const context=location.protocol==='https:'?'HTTPS':(location.protocol==='content:'||location.protocol==='file:')?'archivo local ('+location.protocol+')':location.protocol;
  const diagBase='Entorno: '+context+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(video.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Conexión reportada: '+(navigator.onLine?'en línea':'sin conexión');
  let engine='',attempt=0,watchdog=null,stopped=false,playing=false,jsAttempt=false,nativeAttempt=false,failingOver=false,errors=[];
@@ -2378,6 +2392,7 @@ function play(id,sourceIndex=0){
  video.addEventListener('playing',()=>{if(stopped)return;playing=true;if(it.verifiedManifest){it.verifiedPlayback=true;}stopTimer();status.textContent=it.id==='nevix-hls-test'?'Prueba HLS reproduciendo. Motor: '+(engine||'video'):(it.sample?'Reproduciendo demostración original':it.kind==='live'?'▶ EN VIVO — motor '+(engine||'video'):'Reproduciendo video');if(details)details.hidden=true;});
  video.addEventListener('error',()=>{
    if(stopped)return;
+   if(it.privateMovie&&openPrivateFallback())return;
    if(it.privateMovie&&refreshPrivateAccess())return;
    const detail='video.error '+String(video.error?.code||'desconocido');
    if(isHLS&&engine==='nativo'){errors.push(detail);stopAndReport('El motor nativo no pudo abrir esta señal. El canal puede requerir su reproductor oficial.',detail);}
@@ -2393,7 +2408,18 @@ function play(id,sourceIndex=0){
    else issue('HLS.js no está disponible para este navegador.');
  }};
  if(isHLS){if(hlsSupported)selectJS('Inicio');else if(nativeSupported)selectNative('HLS.js no disponible');else stopAndReport('Este navegador no soporta reproducción HLS.','No hay motores HLS');}
- else{engine='video HTML5';video.src=url;tryAutoPlay(video);}
+ else{
+  engine='video HTML5';
+  video.src=url;
+  tryAutoPlay(video);
+  if(it.privateMovie&&!it.privateProxyActive){
+   watchdogAfter(11000,'El reproductor no pudo iniciar el video',()=>{
+    if(video.readyState<2&&!openPrivateFallback())stopAndReport('No se pudo cargar el video. Comprueba si el MP4 es compatible con este dispositivo.','Reproductor sin imagen tras 11 segundos');
+   });
+  }else if(it.privateMovie){
+   watchdogAfter(16000,'El video privado no respondió',()=>{if(video.readyState<2)stopAndReport('La película no se pudo cargar. El servidor respondió, pero el video no empezó.','Sin datos reproducibles después de 16 segundos');});
+  }
+ }
  $('#player-root .player-close')?.focus();
 }
 function tryAutoPlay(video){
