@@ -1924,7 +1924,7 @@ function renderAdmin(){if(state.pinHash&&!state.unlocked)return renderAdminLocke
  <div class="panel-card"><h2>Respaldo y privacidad</h2><p>Exporta o restaura tus fuentes, favoritos y progreso mediante un archivo JSON. No incluye los videos, solo sus enlaces.</p><div class="actions"><button class="btn btn-sm" data-action="export-json">↓ Exportar</button><label class="btn btn-sm" for="json-file">↑ Importar</label><input class="sr-only" type="file" id="json-file" accept=".json,application/json" /></div><hr style="border:0;border-top:1px solid #2e3857;margin:22px 0"><h2>Protección local</h2><p>${state.pinHash?'PIN configurado. Puedes cambiarlo o quitarlo.':'Puedes crear un PIN para restringir el acceso a este panel en este dispositivo.'}</p><div class="actions"><button class="btn btn-sm" data-action="set-pin">${state.pinHash?'Cambiar PIN':'Crear PIN'}</button>${state.pinHash?'<button class="btn btn-sm" data-action="remove-pin">Quitar PIN</button><button class="btn btn-sm" data-action="lock">Bloquear</button>':''}</div><p class="hint">Si borras los datos del navegador se pierde el PIN y el catálogo local.</p></div><div class="panel-card"><h2>Datos de demostración</h2><p>Puedes restaurar el catálogo de muestra; se reemplazará tu catálogo actual.</p><button class="btn btn-danger btn-sm" data-action="reset">Restablecer NÉVIX TV</button></div></div></div>`;
 }
 
-/* NÉVIX Private R2 integration: no private credentials in published HTML */
+/* NÉVIX private Telnyx Storage: no credentials in published HTML */
 let privateMovies=[];
 let privateFamilyCode='';
 let privateStorageReady=false;
@@ -1970,7 +1970,7 @@ async function loadPrivateMovies(showErrors=false){
 async function privateFamilyLogin(){
  if(!privateStorageReady){
   await privateCheckStatus();
-  if(!privateStorageReady){toast('Primero debes configurar el almacenamiento R2 en Render.');return;}
+  if(!privateStorageReady){toast('Primero debes configurar Telnyx Storage en Render.');return;}
  }
  const code=prompt('Acceso familiar NÉVIX TV. Introduce el código privado:','');
  if(code===null)return;
@@ -1997,7 +1997,7 @@ async function playPrivateFilm(item){
 function privateAdminSection(){
  return '<section class="panel-card" style="margin-top:24px"><h2>☁ Servidor privado de películas</h2>'
  +'<p>Las películas subidas aparecerán automáticamente en Películas tras identificar su portada. Los espectadores no verán ninguna sección de biblioteca privada.</p>'
- +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Cloudflare R2 listo para conectar con tu cuenta.':'Para activarlo configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
+ +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Telnyx Storage está configurado.':'Para activarlo configura TELNYX_API_KEY, TELNYX_STORAGE_BUCKET, TELNYX_STORAGE_REGION, NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
  +'<label class="field">Película MP4 / WebM (máximo 5 GB por archivo)<input type="file" id="private-film-file" accept=".mp4,.webm,video/mp4,video/webm"></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload">☁ Subir película</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
@@ -2005,9 +2005,9 @@ function privateAdminSection(){
  +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Los archivos se envían directamente a tu almacenamiento privado, no pasan por el servidor web. Para MKV es necesario convertir a MP4 compatible.</p>'
  +'</section>';
 }
-const originalRenderAdminForR2=renderAdmin;
+const originalRenderAdminForPrivateStorage=renderAdmin;
 renderAdmin=function(){
- const value=originalRenderAdminForR2();
+ const value=originalRenderAdminForPrivateStorage();
  return state.pinHash&&!state.unlocked?value:value+privateAdminSection();
 };
 async function privateSyncAdmin(){
@@ -2075,14 +2075,14 @@ async function privateUploadAdmin(){
    xhr.open('PUT',auth.uploadUrl,true);
    xhr.setRequestHeader('Content-Type',auth.contentType);
    xhr.upload.onprogress=e=>{if(e.lengthComputable)update('Subiendo película… '+Math.floor(e.loaded/e.total*100)+'%');};
-   xhr.onload=()=>xhr.status>=200&&xhr.status<300?resolve():reject(Error('Cloudflare R2 rechazó la carga (HTTP '+xhr.status+'). Revisa la configuración CORS del bucket.'));
-   xhr.onerror=()=>reject(Error('No se pudo conectar con Cloudflare R2. Comprueba el CORS y la conexión.'));
+   xhr.onload=()=>xhr.status>=200&&xhr.status<300?resolve():reject(Error('Telnyx Storage rechazó la carga (HTTP '+xhr.status+'). Revisa la configuración CORS del bucket.'));
+   xhr.onerror=()=>reject(Error('No se pudo conectar con Telnyx Storage. Comprueba el CORS y la conexión.'));
    xhr.onabort=()=>reject(Error('Se canceló la carga.'));
    xhr.send(file);
   });
   update('Película cargada. Identificando título y buscando portada…');
   const scan=await privateRequest('/api/private/sync',key,true,'POST');
-  update('Guardado en R2. '+scan.ready+' películas listas; '+scan.pending+' pendientes de identificación.');
+  update('Guardado en Telnyx. '+scan.ready+' películas listas; '+scan.pending+' pendientes de identificación.');
   if(privateFamilyCode)await loadPrivateMovies();
  }catch(e){update('No se completó la carga: '+String(e.message||'Error inesperado.'));}
 }
