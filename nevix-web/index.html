@@ -2361,9 +2361,24 @@ function play(id,sourceIndex=0){
      watchdogAfter(13000,'Se agotó el tiempo de conexión HLS.js',()=>{errors.push('HLS.js sin respuesta tras 13 s');if(nativeSupported&&!nativeAttempt){selectNative('HLS.js no respondió');return;}stopAndReport('La señal no comenzó a reproducirse. Comprueba el diagnóstico.','Tiempo de espera HLS.js');});
    }catch(e){errors.push(String(e?.message||e));if(nativeSupported&&!nativeAttempt){selectNative('HLS.js no inició');return;}stopAndReport('El reproductor HLS.js no pudo iniciarse.','Error de JavaScript al crear motor');}
  };
+ const refreshPrivateAccess=()=>{
+  if(!it.privateMovie||stopped||Date.now()<Number(it.privateUrlExpires||0)-60000)return false;
+  const last=Number(video.currentTime)||0;
+  if(last>0){
+   state.progress[it.id]={time:Math.floor(last),duration:Number.isFinite(video.duration)?Math.floor(video.duration):0};
+   store();
+  }
+  stopped=true;
+  if(status)status.textContent='Renovando el acceso seguro a la película…';
+  void playPrivateFilm(it);
+  return true;
+ };
+ video.addEventListener('seeking',()=>{if(it.privateMovie)refreshPrivateAccess();});
+ video.addEventListener('waiting',()=>{if(it.privateMovie)refreshPrivateAccess();});
  video.addEventListener('playing',()=>{if(stopped)return;playing=true;if(it.verifiedManifest){it.verifiedPlayback=true;}stopTimer();status.textContent=it.id==='nevix-hls-test'?'Prueba HLS reproduciendo. Motor: '+(engine||'video'):(it.sample?'Reproduciendo demostración original':it.kind==='live'?'▶ EN VIVO — motor '+(engine||'video'):'Reproduciendo video');if(details)details.hidden=true;});
  video.addEventListener('error',()=>{
    if(stopped)return;
+   if(it.privateMovie&&refreshPrivateAccess())return;
    const detail='video.error '+String(video.error?.code||'desconocido');
    if(isHLS&&engine==='nativo'){errors.push(detail);stopAndReport('El motor nativo no pudo abrir esta señal. El canal puede requerir su reproductor oficial.',detail);}
    else if(!isHLS)stopAndReport('El video no se pudo descargar o decodificar.',detail);
