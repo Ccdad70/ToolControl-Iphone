@@ -2100,10 +2100,96 @@ async function privateManageR2(){
      const extra=it.status==='backup'?' · Respaldo, no aparece a los espectadores':it.status==='processing'?' · '+(phase?'Etapa: '+phase+' ('+(Number(job.percent)||0)+' %)':'Preparando en servidor'):it.status==='processing_failed'?' · '+String(it.validationError||'Revisa el archivo'):'';
      const title=esc(it.title||'Película sin título');
      return '<div class="source-row" style="gap:10px;align-items:center;margin:8px 0"><span style="min-width:0;flex:1"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span>'
-       +'<button class="btn btn-danger btn-sm" type="button" data-action="private-r2-delete" data-id="'+id+'" '+(it.status==='processing'||job?'disabled title="Espera a que termine la preparación"':'')+'>Eliminar</button></div>';
+       +'<div class="actions" style="flex-shrink:0;flex-wrap:wrap;gap:6px">'
+       +(it.status==='ready'||it.status==='review'?'<button class="btn btn-sm" type="button" data-action="private-r2-edit" data-id="'+id+'">✎ Editar título y portada</button>':'')
+       +'<button class="btn btn-danger btn-sm" type="button" data-action="private-r2-delete" data-id="'+id+'" '+(it.status==='processing'||job?'disabled title="Espera a que termine la preparación"':'')+'>Eliminar</button></div></div>';
    }).join('');
  }catch(error){area.textContent='No se pudo consultar Cloudflare R2: '+String(error?.message||'Error.');}
  finally{if(button)button.disabled=false;}
+}
+async function privateEditR2(id){
+ if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ if(!key){toast('Introduce el código de administración.');return;}
+ const list=document.getElementById('private-library-list');
+ if(!list)return;
+ const old=document.getElementById('private-edit-'+id);
+ if(old){old.remove();return;}
+ for(const box of list.querySelectorAll('[id^="private-edit-"]'))box.remove();
+ let item;
+ try{
+  const data=await privateRequest('/api/private/admin/library',key,true);
+  item=(data.files||[]).find(x=>x.id===id);
+ }catch(error){toast('No se pudo consultar la película: '+String(error?.message||'Error.'));return;}
+ if(!item||!['ready','review'].includes(item.status)){toast('Esta película todavía no está disponible para editar.');return;}
+ const trigger=list.querySelector('[data-action="private-r2-edit"][data-id="'+id+'"]');
+ const row=trigger?.closest('.source-row');
+ if(!row)return;
+ const panel=document.createElement('section');
+ panel.id='private-edit-'+id;
+ panel.className='panel-card';
+ panel.style.cssText='margin:10px 0 18px;padding:14px;border-color:#5a6390';
+ panel.innerHTML='<h3 style="margin-bottom:9px">✎ Corregir título y portada</h3>'
+  +'<p class="hint">Esta operación solo modifica el nombre, el año y la portada del catálogo. No borra ni vuelve a subir el MP4.</p>'
+  +'<label class="field">Título verdadero de la película<input id="private-edit-title-'+id+'" maxlength="130" value="'+esc(item.title||'')+'" autocomplete="off"></label>'
+  +'<label class="field">Año de estreno (recomendado)<input id="private-edit-year-'+id+'" maxlength="4" inputmode="numeric" value="'+esc(item.year||'')+'" placeholder="Ej.: 2024"></label>'
+  +'<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-action="private-r2-poster-preview" data-id="'+id+'">Buscar portada correcta</button><button class="btn btn-sm" type="button" data-action="private-r2-edit-cancel" data-id="'+id+'">Cancelar</button></div>'
+  +'<p id="private-edit-status-'+id+'" class="hint" role="status" aria-live="polite"></p>'
+  +'<div id="private-edit-preview-'+id+'"></div>';
+ row.insertAdjacentElement('afterend',panel);
+ panel.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function privatePreviewR2Poster(id){
+ if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ const title=document.getElementById('private-edit-title-'+id)?.value?.trim()||'';
+ const year=document.getElementById('private-edit-year-'+id)?.value?.trim()||'';
+ const preview=document.getElementById('private-edit-preview-'+id);
+ const status=document.getElementById('private-edit-status-'+id);
+ const button=document.querySelector('[data-action="private-r2-poster-preview"][data-id="'+id+'"]');
+ if(!key||title.length<2||year&&!/^(19|20)\d{2}$/.test(year)){if(status)status.textContent='Escribe el título verdadero y, si colocas el año, que tenga cuatro cifras.';return;}
+ if(!preview)return;
+ preview.replaceChildren();
+ if(button)button.disabled=true;
+ if(status)status.textContent='Buscando una portada que coincida con el título y año en TMDB…';
+ try{
+  const match=await privateRequest('/api/private/metadata-preview',key,true,'POST',{id,title,year});
+  if(!match?.image||!/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(jpg|png|webp)$/i.test(match.image))throw Error('TMDB no devolvió una portada válida.');
+  const img=document.createElement('img');
+  img.src=match.image;
+  img.alt='Portada encontrada en TMDB para '+title;
+  img.loading='lazy';
+  img.style.cssText='width:135px;max-width:100%;border-radius:10px;display:block;margin:12px 0;box-shadow:0 8px 24px #0009';
+  preview.appendChild(img);
+  const info=document.createElement('p');info.textContent=title+(year?' ('+year+')':'')+' — Comprueba que la imagen corresponda a la película correcta.';preview.appendChild(info);
+  const save=document.createElement('button');save.className='btn btn-primary';save.type='button';save.dataset.action='private-r2-edit-save';save.dataset.id=id;save.dataset.title=title;save.dataset.year=year;save.textContent='✓ Guardar título y portada';preview.appendChild(save);
+  if(status)status.textContent='Vista previa encontrada. Revisa la portada antes de guardar.';
+ }catch(error){
+  if(status)status.textContent='No se encontró una coincidencia exacta: '+String(error?.message||'Error.'); 
+ }finally{if(button)button.disabled=false;}
+}
+async function privateSaveR2Metadata(id,button){
+ if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ const title=document.getElementById('private-edit-title-'+id)?.value?.trim()||'';
+ const year=document.getElementById('private-edit-year-'+id)?.value?.trim()||'';
+ const status=document.getElementById('private-edit-status-'+id);
+ if(!key){toast('Introduce el código de administración.');return;}
+ if(title!==button?.dataset.title||year!==button?.dataset.year){
+  if(status)status.textContent='Modificaste el título o año. Pulsa nuevamente «Buscar portada correcta» antes de guardar.';
+  return;
+ }
+ if(button)button.disabled=true;
+ if(status)status.textContent='Guardando título, año y portada en NÉVIX…';
+ try{
+  const answer=await privateRequest('/api/private/approve',key,true,'POST',{id,title,year});
+  if(!answer?.ok)throw Error('Render no confirmó la actualización.');
+  if(privateFamilyCode)await loadPrivateMovies();
+  await privateManageR2();
+  toast('Título y portada corregidos. El MP4 original no se modificó.');
+ }catch(error){
+  if(status)status.textContent='No se guardaron los cambios: '+String(error?.message||'Error.');
+ }finally{if(button&&button.isConnected)button.disabled=false;}
 }
 async function privateDeleteR2(id){
  if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
@@ -3014,7 +3100,7 @@ function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perd
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
  switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
-  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-library':void privateManageR2();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
