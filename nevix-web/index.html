@@ -348,6 +348,18 @@ footer{color:#a88d94;border-color:#48121f}
 @media(max-width:740px){.workarea{padding:0 7px}.topbar{height:auto;min-height:61px;gap:7px;padding:7px 10px;border-radius:0 0 15px 15px}.cinema-logo{font-size:20px}.cinema-nav{justify-content:flex-start}.cinema-tab{min-height:37px;padding:7px 9px;font-size:12px}.cinema-icon{height:35px;width:35px;font-size:17px}.mobile-bottom-nav{display:none!important}main{padding:10px 4px 35px}.cinema-spotlight{grid-template-columns:1fr}.cinema-featured{min-height:255px}.cinema-preview{min-height:240px}.cinema-preview-stage{min-height:170px}.cinema-start{padding:9px;border-radius:16px}.cinema-feature-text{padding:24px}.cinema-feature-text h1{font-size:34px}.cinema-feature-text p{font-size:13px}.cinema-menu-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.cinema-cat{min-height:105px;padding:13px 11px}.cinema-cat-icon{font-size:30px}.cinema-cat strong{font-size:15px}.cinema-countries{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.cinema-country{min-height:68px;padding:9px 10px}.cinema-country .flag{font-size:23px}.cinema-channel{flex:0 0 44%}.cinema-below{margin:15px 2px}}
 @media(max-width:430px){.cinema-logo{font-size:17px}.cinema-logo span{display:none}.cinema-tab{font-size:11px;padding:7px 8px}.cinema-icon{width:32px;height:32px}.cinema-featured{min-height:230px}.cinema-feature-text h1{font-size:29px}.cinema-feature-text{padding:20px}.cinema-kicker{letter-spacing:2px;font-size:9px}.cinema-preview{min-height:224px}.cinema-country span:last-child{font-size:13px}}
 </style>
+
+<style id="nevix-mobile-qa-v5">
+@media(max-width:740px){
+ .mobile-bottom-nav{display:flex!important;position:fixed;bottom:0;left:0;right:0;z-index:28;background:#14070df7;border-top:1px solid #702030;box-shadow:0 -8px 28px #000b;backdrop-filter:blur(18px);justify-content:space-around;padding:6px 3px max(6px,env(safe-area-inset-bottom));gap:2px}
+ .mobile-bottom-nav .bottom-tab{flex:1;min-width:0;padding:6px 2px;border-radius:10px;color:#eee0e5;border:1px solid transparent;font-size:10px}
+ .mobile-bottom-nav .bottom-tab.active{color:#fff!important;background:#b50928!important;border-color:#fa3353!important;box-shadow:0 0 12px #f31a3877}
+ .mobile-bottom-nav .bottom-icon{font-size:21px;line-height:1.35}
+ .workarea{padding-bottom:62px}
+ .cinema-nav{max-width:calc(100vw - 225px);justify-content:flex-start}
+}
+@media(max-width:390px){.cinema-nav{max-width:calc(100vw - 195px)}.cinema-logo{font-size:15px}}
+</style>
 </head>
 <body>
 <div class="app-shell" id="app-shell">
@@ -1606,17 +1618,21 @@ const $=sel=>document.querySelector(sel);
 const els={nav:$('#nav'),main:$('#main'),crumb:$('#breadcrumb'),modal:$('#modal-root'),player:$('#player-root'),toast:$('#toast')};
 let saved=null;
 try {saved=JSON.parse(localStorage.getItem(DB)||'null');} catch(_){}
+const CATALOG_CACHE_KEY='nevix-catalog-cache-v1';
+const catalogSaved=(()=>{try{const x=JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY)||'null');return x&&Number.isFinite(x.savedAt)&&Date.now()-x.savedAt<7*86400000?x:{};}catch(_){return {};}})();
+const cachedCatalogList=name=>Array.isArray(catalogSaved[name])?catalogSaved[name].filter(x=>x&&['movie','series'].includes(x.kind)&&x.watchmode===true&&typeof x.title==='string').slice(0,80):[];
 const state={
  items:Array.isArray(saved?.items)?saved.items.map(x=>normalizeItem(x,{allowDemo:true})).filter(Boolean).slice(0,2000):structuredClone(SAMPLES),
  favorites:Array.isArray(saved?.favorites)?saved.favorites.map(String):[],
  progress:typeof saved?.progress==='object'&&saved.progress? saved.progress:{},
  pinHash:typeof saved?.pinHash==='string'?saved.pinHash:'',
  unlocked:false,
- sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&Date.now()-Number(x.testedAt||0)<6*3600000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===2?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:[],moviePopularItems:[],moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:[],seriesPopularItems:[],seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
+ sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&Date.now()-Number(x.testedAt||0)<6*3600000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===2?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:cachedCatalogList('movieRecentItems'),moviePopularItems:cachedCatalogList('moviePopularItems'),moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:cachedCatalogList('seriesRecentItems'),seriesPopularItems:cachedCatalogList('seriesPopularItems'),seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
  hls:null,playing:null,lastSave:0
 };
 const REPLACED_OFFICIAL_IDS=new Set(['official-us-abc','official-us-cbs','official-de-dw','official-fr-france24']);
 function directoryOnly(){return OFFICIAL_SOURCES.filter(it=>!REPLACED_OFFICIAL_IDS.has(it.id));}
+function saveCatalogSnapshot(){try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.stringify({savedAt:Date.now(),movieRecentItems:state.movieRecentItems.slice(0,80),moviePopularItems:state.moviePopularItems.slice(0,80),seriesRecentItems:state.seriesRecentItems.slice(0,80),seriesPopularItems:state.seriesPopularItems.slice(0,80)}));}catch(_){/* El almacenamiento puede estar lleno o desactivado. */}}
 function movieCatalogItems(){const seen=new Set();return [...state.movieRecentItems,...state.moviePopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function seriesCatalogItems(){const seen=new Set();return [...state.seriesRecentItems,...state.seriesPopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function isRetiredStarterTitle(it){return (it?.kind==='movie'||it?.kind==='series')&&(it?.openLicense===true||it?.free===true||it?.sample===true||String(it?.id||'').startsWith('open-')||String(it?.id||'').startsWith('demo-')||String(it?.id||'').startsWith('official-vod-'));}
@@ -1761,6 +1777,7 @@ async function loadWatchmodeSection(section,next=false){
   state[key]=[...(next?state[key]:[]),...mapped.filter(x=>!seen.has(x.id))];
   state.moviePage[section]=page;
   state.movieTotalPages[section]=Number(data.totalPages)||page;
+  saveCatalogSnapshot();
  }catch(e){state.movieError=String(e?.message||'No fue posible actualizar las películas.');}
  finally{state.movieLoading[section]=false;render();}
 }
@@ -1807,6 +1824,7 @@ async function loadWatchmodeSeriesSection(section,next=false){
   state[key]=[...(next?state[key]:[]),...mapped.filter(x=>!seen.has(x.id))];
   state.seriesPage[section]=page;
   state.seriesTotalPages[section]=Number(data.totalPages)||page;
+  saveCatalogSnapshot();
  }catch(e){state.seriesError=String(e?.message||'No fue posible actualizar las series.');}
  finally{state.seriesLoading[section]=false;render();}
 }
