@@ -2227,53 +2227,96 @@ async function privateRemuxR2Admin(){
  if(button?.disabled)return;
  if(!key){toast('Introduce tu código de administración.');return;}
  const show=message=>{if(status)status.textContent=message;};
- if(button)button.disabled=true;
- try{
-  const readiness=await privateRequest('/api/private/status','');
-  if(!readiness?.uploadReady)throw Error('Cloudflare R2 no está preparado para esta operación.');
-  let jobId='';
-  try{jobId=String(sessionStorage.getItem(NEVIX_REMUX_JOB_KEY)||'');}catch(_){}
-  if(jobId){
-   try{await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(jobId),key,true);}
-   catch(_){jobId='';try{sessionStorage.removeItem(NEVIX_REMUX_JOB_KEY);}catch(_){}}
-  }
-  if(!jobId){
-   show('Localizando tu película en Cloudflare R2…');
+ let jobId='';
+ const forgetJob=()=>{try{sessionStorage.removeItem(NEVIX_REMUX_JOB_KEY);}catch(_){}};
+ const confirmRepaired=async()=>{
+  try{
    const data=await privateRequest('/api/private/admin/catalog',key,true);
    const movies=(data.items||[]).filter(x=>x.status==='ready');
-   if(!movies.length)throw Error('No hay películas disponibles para reparar.');
+   if(movies.length===1&&movies[0].remuxed){
+    forgetJob();
+    show('MP4 estándar ya guardado en Cloudflare R2. El original sigue como respaldo. Abre Películas y comprueba la reproducción.');
+    if(privateFamilyCode)await loadPrivateMovies();
+    return true;
+   }
+  }catch(_){}
+  return false;
+ };
+ if(button)button.disabled=true;
+ try{
+  show('Comprobando el estado real de Cloudflare R2…');
+  const readiness=await privateRequest('/api/private/status','');
+  if(!readiness?.uploadReady)throw Error('Cloudflare R2 todavía no responde. No se modificará la película original.');
+  try{jobId=String(sessionStorage.getItem(NEVIX_REMUX_JOB_KEY)||'');}catch(_){}
+  if(jobId){
+   try{
+    const previous=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(jobId),key,true);
+    if(previous?.completed){forgetJob();await confirmRepaired();return;}
+   }catch(error){
+    if(await confirmRepaired())return;
+    const message=String(error?.message||'');
+    if(/ya no está activa|job_not_found|HTTP 404/i.test(message)){jobId='';forgetJob();}
+    else{
+     show('La conexión con Render se interrumpió al comprobar el trabajo. No significa que la reparación haya fallado. Abre nuevamente este panel para consultar el mismo trabajo.');
+     return;
+    }
+   }
+  }
+  if(!jobId){
+   show('Comprobando si la película ya está reparada…');
+   if(await confirmRepaired())return;
+   const data=await privateRequest('/api/private/admin/catalog',key,true);
+   const movies=(data.items||[]).filter(x=>x.status==='ready'&&!x.remuxed);
+   if(!movies.length){show('No hay MP4 pendientes de reparación. Comprueba la reproducción en Películas.');return;}
    let movie=movies[0];
    if(movies.length>1){
-    const choice=prompt('Escribe el número de la película que deseas reparar:\n'+movies.map((x,i)=>(i+1)+'. '+x.title).join('\n'),'1');
-    if(choice===null){show('Preparación cancelada.');return;}
+    const choice=prompt('Escribe el número del MP4 que deseas reparar:\n'+movies.map((x,i)=>(i+1)+'. '+x.title).join('\n'),'1');
+    if(choice===null){show('Reparación cancelada.');return;}
     movie=movies[Number(choice)-1];
-    if(!movie)throw Error('Selecciona un número válido de la lista.');
+    if(!movie)throw Error('Selecciona un número válido.');
    }
-   show('Iniciando reparación segura del MP4, sin recodificar…');
+   show('Iniciando reparación sin recodificar el MP4…');
    const started=await privateRequest('/api/private/remux/start',key,true,'POST',{id:movie.id});
    jobId=String(started.job?.jobId||'');
-   if(!/^[a-f0-9-]{36}$/i.test(jobId))throw Error('El servidor no confirmó el inicio de la reparación.');
+   if(!/^[a-f0-9-]{36}$/i.test(jobId))throw Error('El servidor no devolvió una referencia válida de la reparación.');
    try{sessionStorage.setItem(NEVIX_REMUX_JOB_KEY,jobId);}catch(_){}
   }
+  let interruptions=0;
   for(let round=0;round<440;round++){
-   const item=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(jobId),key,true);
+   let item;
+   try{
+    item=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(jobId),key,true);
+    interruptions=0;
+   }catch(error){
+    if(await confirmRepaired())return;
+    interruptions++;
+    if(interruptions>=12){
+     show('No pudimos confirmar el estado por una interrupción de conexión. La película original no se borró. Puedes volver a consultar este mismo trabajo sin iniciar otra reparación.');
+     return;
+    }
+    show('Conexión temporalmente interrumpida. Recuperando estado de la reparación ('+interruptions+'/12)…');
+    await new Promise(resolve=>setTimeout(resolve,5000));
+    continue;
+   }
    const phase={queued:'Preparando',downloading:'Descargando original',remuxing:'Reorganizando MP4',uploading:'Guardando MP4 compatible',indexing:'Actualizando catálogo',completed:'Completado',failed:'No completado'}[item.phase]||'Procesando';
    show(phase+' · '+(Number(item.percent)||0)+' % · '+String(item.message||''));
    if(item.completed){
-    try{sessionStorage.removeItem(NEVIX_REMUX_JOB_KEY);}catch(_){}
-    show('MP4 estándar listo. Original conservado como respaldo. Entra en Películas para probar su reproducción.');
+    forgetJob();
+    show('MP4 estándar listo. Archivo original conservado en R2. Abre Películas para probarlo.');
     if(privateFamilyCode)await loadPrivateMovies();
     return;
    }
    if(item.failed){
-    try{sessionStorage.removeItem(NEVIX_REMUX_JOB_KEY);}catch(_){}
-    throw Error(item.message||'El servidor no pudo preparar el MP4.');
+    forgetJob();
+    show('La reparación no se completó: '+String(item.message||'Error de FFmpeg.')+' El archivo original sigue almacenado.');
+    return;
    }
    await new Promise(resolve=>setTimeout(resolve,5000));
   }
-  show('La preparación sigue sin confirmación. Puedes volver a pulsar este botón para comprobar el mismo proceso.');
+  show('Todavía no se confirmó el resultado. Pulsa de nuevo este botón para consultar el mismo trabajo.');
  }catch(error){
-  show('No se completó la reparación: '+String(error?.message||'Error del servidor.')+' El MP4 original continúa almacenado.');
+  if(await confirmRepaired())return;
+  show('No pudimos consultar o iniciar la reparación: '+String(error?.message||'Error de conexión.')+(jobId?' Puede volver a consultar el trabajo sin repetirlo.':' El MP4 original no se modificó.'));
  }finally{if(button)button.disabled=false;}
 }
 
