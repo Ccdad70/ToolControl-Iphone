@@ -175,22 +175,25 @@ server.listen(PORT,'0.0.0.0',()=>console.log('NÉVIX catalog ready; configured='
 async function checkCatalogHealth(){
  if(!KEY)return;
  for(const [kind,type] of [['movie','movie'],['series','tv_series']]){
-  // Reuse one-item Watchmode health queries for image checks. No secrets in logs.
-  const results=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:type,regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:1})));
+  // Comprobar varias entradas reales de cada país y sus imágenes. Nunca registrar claves.
+  const results=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:type,regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:6})));
   for(let i=0;i<results.length;i++){
    const x=results[i],country=['US','CO'][i];
    const titles=x.status==='fulfilled'&&Array.isArray(x.value?.titles)?x.value.titles:[];
    const reason=x.status==='rejected'?String(x.reason?.error||x.reason?.name||'unknown'):'none';
    console.log('Watchmode health check: type='+kind+' region='+country+' status='+(x.status==='fulfilled'?'ok':'error')+' titles='+titles.length+' reason='+reason);
    if(country==='US'&&TMDB_KEY&&titles.length){
-    const candidate=titles[0];
-    const id=String(candidate.tmdb_id||'');
-    let result='unavailable';
-    if(/^\d{1,12}$/.test(id)){
-     try{const pic=await tmdbTitle(id,kind);result=pic?.image?'poster_ok':'poster_missing_or_rejected';}
-     catch(err){result='poster_request_failed';}
-    }else result='tmdb_id_missing';
-    console.log('TMDB catalog poster check: kind='+kind+' result='+result+' mapped_id='+(/^\d{1,12}$/.test(id)?'yes':'no'));
+    let checked=0,posters=0,missing=0;
+    for(const t of titles.slice(0,4)){
+     checked++;
+     let m=null;
+     try{
+      if(/^\d{1,12}$/.test(String(t.tmdb_id||'')))m=await tmdbTitle(String(t.tmdb_id),kind);
+      if(!m?.image)m=await tmdbSearchPoster(String(t.title||''),String(t.year||''),kind)||m;
+     }catch(_){}
+     if(m?.image)posters++;else missing++;
+    }
+    console.log('NÉVIX poster QA: kind='+kind+' checked='+checked+' real_posters='+posters+' missing='+missing);
    }
   }
  }
