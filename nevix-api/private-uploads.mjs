@@ -116,10 +116,12 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      active.delete(safeString(data.uploadId));
      console.log('NÉVIX R2 upload complete: size_mb='+Math.round(s.size/1048576)+' chunks='+s.chunks+' verified=true');
     }finally{s.busy=false;}
-    let ready=null,pending=null;
-    try{const rows=await onComplete();ready=rows.filter(x=>x.status==='ready').length;pending=rows.filter(x=>x.status!=='ready').length;}
-    catch(e){console.error('NÉVIX metadata refresh failed after successful upload:',String(e?.$metadata?.httpStatusCode||'unknown'));}
-    respond(res,200,{ok:true,stored:true,ready,pending,metadataPending:ready===null});return true;
+    let result=null;
+    try{result=await onComplete(s.key);}
+    catch(e){console.error('NÉVIX automatic MP4 verification setup failed after upload: '+safeString(e?.name||'Error'));}
+    respond(res,200,{ok:true,stored:true,ready:result?.ready??null,pending:result?.pending??null,
+      metadataPending:result===null,autoProcessing:result?.autoProcessing===true,jobId:result?.jobId||null,
+      movieId:result?.movieId||null,validationError:result?.validationError||''});return true;
    }
    if(url.pathname==='/api/private/upload/abort'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
