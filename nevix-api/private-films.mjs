@@ -132,22 +132,60 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   })().finally(()=>{running=null;});
   return running;
  }
- const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:()=>sync(true)}):null;
- const remux=configured?createPrivateRemux({client,bucket,finalize:async(original,newKey,newSize)=>{
-  const rows=await sync(true);
-  const old=rows.find(x=>x.key===original.key&&x.id===original.id);
-  const next=rows.find(x=>x.key===newKey&&x.size===newSize);
-  if(!old||!next||old.status!=='ready')throw Error('No se pudo comprobar el catálogo original y la copia MP4.');
-  Object.assign(next,{
-   title:old.title,year:old.year||'',image:old.image||'',description:old.description||'',
-   status:'ready',container:'standard',remuxed:true,addedAt:old.addedAt||new Date().toISOString()
-  });
-  old.status='backup';
+ let remux=null;
+ async function markValidationFailed(entry,message){
+  const rows=await sync(true),x=rows.find(y=>y.key===entry.key&&y.id===entry.id);
+  if(x&&x.status==='processing'){
+   x.status='processing_failed';x.validationError=String(message||'No se pudo preparar el MP4.').slice(0,220);
+   delete x.publicationStatus;
+   await saveIndex();
+  }
+ }
+ async function publishValidated(entry){
+  const rows=await sync(true),x=rows.find(y=>y.key===entry.key&&y.id===entry.id);
+  if(!x)throw Error('El MP4 ya no existe.');
+  x.status=x.publicationStatus==='ready'?'ready':'review';
+  x.verified=true;x.container='standard';x.validationError='';
+  delete x.publicationStatus;
   await saveIndex();
-  cacheUntil=Date.now()+90000;
-  console.log('NÉVIX R2 MP4 catalog finalized: standard=true original_backup=true');
+  console.log('NÉVIX auto MP4 verified: repair=false published='+(x.status==='ready'));
+ }
+ async function publishRepaired(original,key,size){
+  const rows=await sync(true);
+  const old=rows.find(x=>x.key===original.key&&x.id===original.id),next=rows.find(x=>x.key===key&&x.size===size);
+  if(!old||!next||!['ready','processing','processing_failed','review'].includes(old.status))throw Error('No se pudo comprobar la copia MP4 y el original.');
+  const status=old.publicationStatus||old.status;
+  Object.assign(next,{title:old.title,year:old.year||'',image:old.image||'',description:old.description||'',status:status==='ready'?'ready':'review',container:'standard',verified:true,remuxed:true,backupKey:old.key,addedAt:old.addedAt||new Date().toISOString()});
+  old.status='backup';old.validationError='';delete old.publicationStatus;
+  await saveIndex();cacheUntil=Date.now()+90000;
+  console.log('NÉVIX R2 MP4 prepared: published='+(next.status==='ready')+' backup=true');
   void checkPlayback();
- }}):null;
+ }
+ remux=configured?createPrivateRemux({client,bucket,finalize:publishRepaired,finishWithoutRemux:publishValidated,onFailure:markValidationFailed}):null;
+ async function autoValidateUploadedMovie(key){
+  const rows=await sync(true),entry=rows.find(x=>x.key===key);
+  if(!entry)throw Error('No se encontró el archivo MP4 recién subido.');
+  entry.publicationStatus=entry.status==='ready'?'ready':'review';
+  entry.status='processing';entry.validationError='';
+  await saveIndex();
+  const result=remux.start(entry,{auto:true});
+  if(result.error){
+   await markValidationFailed(entry,result.error==='file_too_large'?'El MP4 supera 4 GiB, límite de preparación automática.':'No se pudo iniciar la verificación: '+result.error);
+   return{ready:rows.filter(x=>x.status==='ready').length,pending:1,autoProcessing:false,validationError:result.error};
+  }
+  console.log('NÉVIX automatic MP4 validation queued: size_mb='+Math.round(entry.size/1048576));
+  return{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>!['ready','backup'].includes(x.status)).length,autoProcessing:true,jobId:result.job.jobId,movieId:entry.id};
+ }
+ const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:autoValidateUploadedMovie}):null;
+ async function recoverAutoJobs(){
+  if(!configured||!uploadReady)return;
+  const rows=await sync(true);
+  for(const entry of rows.filter(x=>x.status==='processing')){
+   const started=remux.start(entry,{auto:true});
+   if(started.error)await markValidationFailed(entry,started.error);
+   else console.log('NÉVIX automatic MP4 job restarted after server deploy');
+  }
+ }
  async function handle(req,res,url){
   try{
    if(url.pathname==='/api/private/status'){
