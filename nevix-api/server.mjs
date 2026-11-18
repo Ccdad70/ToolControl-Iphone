@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createPrivateFilmService } from './private-films.mjs';
 const PORT=Number(process.env.PORT||10000);
 const KEY=String(process.env.WATCHMODE_API_KEY||'').trim();
 const TMDB_KEY=String(process.env.TMDB_API_KEY||'').trim();
@@ -152,12 +153,17 @@ async function movieLink(id){
   return {id,webUrl:source?.web_url||null,region:source?.region||null};
  });
 }
+const privateFilms=createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin:ORIGIN});
 const server=http.createServer(async(req,res)=>{
- if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':ORIGIN,'access-control-allow-methods':'GET, OPTIONS','access-control-allow-headers':'Content-Type'});res.end();return;}
- if(req.method!=='GET'){send(res,405,{error:'method_not_allowed'});return;}
+ if(req.method==='OPTIONS'){
+  if(req.headers.origin&&req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
+  res.writeHead(204,{'access-control-allow-origin':ORIGIN,'access-control-allow-methods':'GET, POST, OPTIONS','access-control-allow-headers':'Content-Type, X-Nevix-Access-Code, X-Nevix-Admin-Key','access-control-max-age':'600'});res.end();return;
+ }
  const url=new URL(req.url||'/','http://localhost');
- if(url.pathname==='/health'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder'});return;}
+ if(url.pathname==='/health'&&req.method==='GET'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder',privateStorage:privateFilms.configured});return;}
  if(req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
+ if(url.pathname.startsWith('/api/private/')){await privateFilms.handle(req,res,url);return;}
+ if(req.method!=='GET'){send(res,405,{error:'method_not_allowed'});return;}
  try{
   if(url.pathname==='/api/movies'||url.pathname==='/api/series'){
    const page=Number(url.searchParams.get('page')||1);
