@@ -92,21 +92,59 @@ async function multipartFile(client,bucket,storageOps,key,path,size,onProgress){
 const statusOf=job=>({jobId:job.jobId,phase:job.phase,percent:job.percent,completed:job.phase==='completed',failed:job.phase==='failed',message:job.message,ready:job.phase==='completed'});
 async function probe(path){
  return new Promise((resolve,reject)=>{
-  execFile(FFPROBE_BIN,['-v','error','-show_entries','format=duration:stream=codec_name,codec_type,width,height,sample_rate','-of','json',path],
-   {timeout:45000,maxBuffer:256*1024},(err,out)=>{
-    if(err)return reject(Error('FFprobe no pudo analizar el archivo de video.'));
-    try{resolve(JSON.parse(out));}catch(_){reject(Error('FFprobe devolvió metadatos inválidos.'));}
-   });
+  execFile(FFPROBE_BIN,['-v','error','-show_entries',
+   'format=duration,format_name:stream=codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile',
+   '-of','json',path],{timeout:90000,maxBuffer:512*1024},(err,out)=>{
+   if(err)return reject(Error('FFprobe no pudo analizar el contenedor. Comprueba que el archivo de video no esté dañado.'));
+   try{resolve(JSON.parse(out));}catch(_){reject(Error('FFprobe devolvió datos multimedia inválidos.'));}
+  });
  });
 }
-async function ffmpegRemux(input,output,onProgress=()=>{},durationSec=0){
+const firstVideo=p=>(p.streams||[]).find(x=>x.codec_type==='video');
+const firstAudio=p=>(p.streams||[]).find(x=>x.codec_type==='audio');
+const movieDuration=p=>Number(p.format?.duration||firstVideo(p)?.duration||firstAudio(p)?.duration)||0;
+const compatibleH264=p=>{
+ const v=firstVideo(p);
+ return v?.codec_name==='h264'&&['yuv420p','yuvj420p'].includes(String(v.pix_fmt||'').toLowerCase());
+};
+function conversionPlan(before,filename,layout){
+ const video=firstVideo(before),audio=firstAudio(before);
+ if(!video)throw Error('El archivo no contiene una pista de video reconocible.');
+ const videoCopy=compatibleH264(before);
+ const hasAudio=Boolean(audio);
+ const channels=Number(audio?.channels)||0;
+ const stereoCopy=hasAudio&&audio.codec_name==='aac'&&channels>0&&channels<=2;
+ const surround=hasAudio&&channels>=6;
+ const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||hasAudio&&(!stereoCopy||surround);
+ return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels};
+}
+async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
+ const args=['-hide_banner','-nostdin','-loglevel','error','-stats_period','2','-progress','pipe:2','-y','-threads','1','-i',input,
+  '-map','0:v:0'];
+ if(plan.hasAudio){
+  args.push('-map','0:a:0');
+  if(plan.surround)args.push('-map','0:a:0');
+ }
+ if(plan.videoCopy)args.push('-c:v:0','copy');
+ else args.push('-c:v:0','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-threads:v:0','1');
+ if(plan.hasAudio){
+  if(plan.stereoCopy)args.push('-c:a:0','copy');
+  else args.push('-c:a:0','aac','-ac:a:0','2','-b:a:0','192k');
+  args.push('-metadata:s:a:0','title=Estéreo compatible','-disposition:a:0','default');
+  if(plan.surround){
+   if(plan.sourceAudio==='aac'&&plan.sourceChannels===6)args.push('-c:a:1','copy');
+   else args.push('-c:a:1','aac','-ac:a:1','6','-b:a:1','384k');
+   args.push('-metadata:s:a:1','title=Envolvente 5.1','-disposition:a:1','0');
+  }
+ }
+ args.push('-max_muxing_queue_size','2048','-movflags','+faststart','-f','mp4',output);
  await new Promise((resolve,reject)=>{
-  const task=spawn(FFMPEG_BIN,['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-i',input,'-map','0:v:0','-map','0:a:0?','-c','copy','-movflags','+faststart','-f','mp4',output],{stdio:['ignore','ignore','pipe']});
-  let exited=false,stderr='';
-  const watchdog=setTimeout(()=>{if(!exited){try{task.kill('SIGKILL');}catch(_){}}},20*60*1000);
-  task.stderr.on('data',chunk=>{
-   const detail=String(chunk);
-   stderr=(stderr+detail).slice(-1200);
+  const proc=spawn(FFMPEG_BIN,args,{stdio:['ignore','ignore','pipe']});
+  let done=false,reason='',timedOut=false;
+  const watchdog=setTimeout(()=>{timedOut=true;try{proc.kill('SIGKILL');}catch(_){}},30*60*1000);
+  proc.stderr.on('data',buf=>{
+   const detail=String(buf);
+   reason=(reason+detail).slice(-1400);
    for(const part of detail.split(/\r?\n/)){
     const m=part.match(/^out_time_(?:us|ms)=(\d+)$/);
     if(m&&Number(durationSec)>0){
@@ -115,27 +153,29 @@ async function ffmpegRemux(input,output,onProgress=()=>{},durationSec=0){
     }
    }
   });
-  task.on('error',()=>{exited=true;clearTimeout(watchdog);reject(Error('FFmpeg no está disponible para convertir el contenedor.'));});
-  task.on('close',code=>{
-   if(exited)return;
-   exited=true;clearTimeout(watchdog);
+  proc.on('error',()=>{if(done)return;done=true;clearTimeout(watchdog);reject(Error('FFmpeg no está disponible para convertir este archivo.'));});
+  proc.on('close',code=>{
+   if(done)return;done=true;clearTimeout(watchdog);
    if(code===0)return resolve();
-   const reason=/Invalid data found|moov atom not found|error reading header/i.test(stderr)?'La estructura original del archivo puede estar dañada.':/No space left on device/i.test(stderr)?'No hay espacio temporal suficiente.':/Unrecognized option|Option not found|Error splitting the argument list/i.test(stderr)?'La versión instalada de FFmpeg no reconoce una opción de conversión.':'FFmpeg no pudo remultiplexar el video con copia de pistas.';
-   const lines=stderr.split(/\r?\n/).map(x=>x.trim()).filter(x=>/error|invalid|option|failed|could not|moov|non.monotonous|corrupt|damaged|unknown|unsupported/i.test(x));
-   const diagnostic=(lines[lines.length-1]||'no_specific_detail').replace(/(?:\/[^\s:]+)+/g,'[path]').slice(0,160);
-   console.error('NÉVIX FFmpeg remux exit='+String(code)+' diagnostic='+diagnostic);
-   reject(Error(reason));
+   const message=timedOut?'El video requiere más de 30 minutos de conversión. Este plan de Render no tiene suficiente potencia.':/No space left on device/i.test(reason)?'El servidor no tiene espacio temporal suficiente para convertir esta película.':/Cannot allocate memory|out of memory|Resource temporarily unavailable/i.test(reason)?'El servidor no tiene memoria suficiente para convertir este archivo.':/Error while decoding|Invalid data found|moov atom not found|error reading header/i.test(reason)?'El video de origen contiene datos dañados o no admite esta conversión.':/Unknown encoder|Encoder .* not found/i.test(reason)?'FFmpeg no dispone del codificador H.264/AAC necesario.':'FFmpeg no pudo completar la conversión multimedia en este servidor.';
+   const tail=reason.split(/\r?\n/).map(x=>x.trim()).filter(x=>/error|invalid|failed|could not|unsupported|encoder|unknown/i.test(x));
+   console.error('NÉVIX conversion failed: exit='+code+' diagnostics='+String(tail.at(-1)||'none').replace(/(?:\/[^\s:]+)+/g,'[path]').slice(0,150));
+   reject(Error(message));
   });
  });
 }
-function validateMedia(input,output){
- const video=a=>(a.streams||[]).find(x=>x.codec_type==='video');
- const audio=a=>(a.streams||[]).find(x=>x.codec_type==='audio');
- const v1=video(input),v2=video(output),a1=audio(input),a2=audio(output);
- if(!v1||!v2||v1.codec_name!=='h264'||v2.codec_name!=='h264'||v1.width!==v2.width||v1.height!==v2.height)return false;
- if(Boolean(a1)!==Boolean(a2)||a1&&a2&&(a1.codec_name!==a2.codec_name||a1.sample_rate!==a2.sample_rate))return false;
- const d1=Number(input.format?.duration),d2=Number(output.format?.duration);
- return Number.isFinite(d1)&&Number.isFinite(d2)&&d1>2&&Math.abs(d1-d2)<=Math.max(3,d1*0.002);
+function validateMedia(before,after,plan){
+ const originalVideo=firstVideo(before),outputVideo=firstVideo(after);
+ if(!originalVideo||!outputVideo||outputVideo.codec_name!=='h264'||!['yuv420p','yuvj420p'].includes(String(outputVideo.pix_fmt||'').toLowerCase()))return false;
+ if(originalVideo.width!==outputVideo.width||originalVideo.height!==outputVideo.height)return false;
+ const audio=(after.streams||[]).filter(x=>x.codec_type==='audio');
+ if(plan.hasAudio){
+  if(!audio.length||audio[0].codec_name!=='aac'||Number(audio[0].channels)>2)return false;
+  if(plan.surround&&(!audio[1]||audio[1].codec_name!=='aac'||Number(audio[1].channels)!==6))return false;
+ }else if(audio.length)return false;
+ const beforeSeconds=movieDuration(before),afterSeconds=movieDuration(after);
+ if(!Number.isFinite(afterSeconds)||afterSeconds<=2)return false;
+ return !(beforeSeconds>2&&Math.abs(beforeSeconds-afterSeconds)>Math.max(4,beforeSeconds*0.01));
 }
 async function detectMp4Layout(path,size){
  const fd=await openFile(path,'r');
