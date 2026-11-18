@@ -161,7 +161,11 @@ const server=http.createServer(async(req,res)=>{
  }
  const url=new URL(req.url||'/','http://localhost');
  if(url.pathname==='/health'&&req.method==='GET'){send(res,200,{ok:true,configured:Boolean(KEY),countries:['US','CO'],mode:'combined',posters:TMDB_KEY?'TMDB':'illustrative-placeholder',privateStorage:privateFilms.configured});return;}
- if(req.headers.origin!==ORIGIN){send(res,403,{error:'origin_not_allowed'});return;}
+ // Native <video> requests normally omit Origin; require a valid short-lived
+ // signed media token inside privateFilms.handle instead. Do not relax CORS for
+ // catalog, administration, uploads, or requests coming from another origin.
+ const videoTokenRequest=url.pathname==='/api/private/video'&&(req.method==='GET'||req.method==='HEAD');
+ if(req.headers.origin!==ORIGIN&&!(videoTokenRequest&&!req.headers.origin)){send(res,403,{error:'origin_not_allowed'});return;}
  if(url.pathname.startsWith('/api/private/')){await privateFilms.handle(req,res,url);return;}
  if(req.method!=='GET'){send(res,405,{error:'method_not_allowed'});return;}
  try{
