@@ -271,10 +271,28 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
     // downloading a complete movie or exposing its link in logs.
-    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(20000)});
+    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-1023'},signal:AbortSignal.timeout(20000)});
     const playbackCode=playback.status;
-    if(playback.body){try{await playback.body.cancel();}catch(_){}}
-    if(playbackCode!==200&&playbackCode!==206)throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
+    if(playbackCode!==206&&playbackCode!==200){
+     if(playback.body){try{await playback.body.cancel();}catch(_){}}
+     throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
+    }
+    const headers={type:String(playback.headers.get('content-type')||''),range:String(playback.headers.get('content-range')||'').slice(0,100),length:String(playback.headers.get('content-length')||'')};
+    const firstBytes=Buffer.from(await playback.arrayBuffer());
+    const mp4Header=firstBytes.length>=12&&firstBytes.toString('ascii',4,8)==='ftyp';
+    const fileType=mp4Header?'mp4_ftyp':firstBytes.length>4&&firstBytes.toString('ascii',0,4)==='\\x1aE\\xdf\\xa3'?'webm':'unknown';
+    console.log('NÉVIX Telnyx video format probe: http='+playbackCode+' type='+headers.type.slice(0,55)+' range='+headers.range+' content_length='+headers.length+' bytes='+firstBytes.length+' signature='+fileType);
+    if(mp4Header){
+     const tail=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=-65536'},signal:AbortSignal.timeout(20000)});
+     if(tail.status===206){
+      const last=Buffer.from(await tail.arrayBuffer());
+      const moovAtEnd=last.includes(Buffer.from('moov'));
+      console.log('NÉVIX Telnyx video metadata probe: tail_http=206 sampled_bytes='+last.length+' moov_marker_in_tail='+moovAtEnd);
+     }else{
+      if(tail.body){try{await tail.body.cancel();}catch(_){}}
+      console.log('NÉVIX Telnyx video metadata probe: tail_http='+tail.status);
+     }
+    }
     console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
    return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok'};
