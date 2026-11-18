@@ -266,8 +266,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    stage='small_put';
    await client.send(new PutObjectCommand({Bucket:bucket,Key:singleKey,Body:Buffer.from('NEVIX-WRITE-TEST'),ContentType:'application/octet-stream'}));
    stage='stream_put';
-   const content=Buffer.from('NEVIX-STREAM-TEST');
-   await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
+   const content=Buffer.alloc(8*1024*1024,65);
+   await rawUploadPart(streamKey,null,0,(async function*(){for(let offset=0;offset<content.length;offset+=256*1024)yield content.subarray(offset,offset+256*1024);})(),content.length);
    return {ok:true,reason:'bucket_read_and_stream_write_ok'};
   }catch(e){
    const http=Number(e?.$metadata?.httpStatusCode)||0;
