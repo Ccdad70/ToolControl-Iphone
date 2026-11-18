@@ -2262,10 +2262,10 @@ function startPrivateFragmentedMP4({url,video,onStatus,onError}){
  };
  const codecFromInit=bytes=>{
   const ascii=(a,b)=>String.fromCharCode(...bytes.subarray(a,b));
-  if(bytes.length<1500||ascii(4,8)!=='ftyp'||!ascii(0,Math.min(bytes.length,32000)).includes('moof')){
-   // A moof need not be in the first 32 KB of every fragmented MP4.
-   if(bytes.length<1500||ascii(4,8)!=='ftyp')throw Error('El archivo no contiene una cabecera MP4 válida.');
-  }
+  // The initialization segment intentionally contains only ftyp + moov.
+  // The actual Telnyx video has a 1473-byte init, so requiring >=1500 or
+  // requiring moof in this buffer incorrectly rejects a valid movie.
+  if(bytes.length<16||ascii(4,8)!=='ftyp')throw Error('El archivo no contiene una cabecera MP4 válida.');
   const limit=Math.min(bytes.length-12,60000);
   let videoCodec='',hasAudio=false,fragmented=false;
   for(let i=0;i<limit;i++){
