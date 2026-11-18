@@ -2204,6 +2204,61 @@ async function privateSendMp4Part({sessionId,part,piece,key,onProgress}){
   xhr.send(piece);
  });
 }
+async function privateWatchAutomaticMovie(key,started,onUpdate){
+ let jobId=String(started.jobId||''),movieId=String(started.movieId||''),errors=0;
+ const update=msg=>{onUpdate(msg);};
+ const phases={queued:'Preparación en cola',downloading:'Analizando video en R2',remuxing:'Verificando o reparando el MP4',uploading:'Guardando copia compatible',indexing:'Publicando película',completed:'Verificación completa',failed:'Verificación fallida'};
+ for(let n=0;n<240;n++){
+  let result=null;
+  try{
+   result=await privateRequest('/api/private/remux/status?jobId='+encodeURIComponent(jobId),key,true);
+   errors=0;
+  }catch(error){
+   errors++;
+   try{
+    const library=await privateRequest('/api/private/admin/library',key,true);
+    const original=(library.files||[]).find(x=>x.id===movieId);
+    if(original?.status==='processing_failed'){
+     update('Verificación incompleta: '+String(original.validationError||'El MP4 necesita revisión.')+'. El archivo original se conserva.');return false;
+    }
+    if(original?.status==='backup'||(original?.verified&&original?.status!=='processing')){
+     update('La película ya fue verificada y preparada en Cloudflare R2.');return true;
+    }
+    if(original?.job?.jobId){jobId=original.job.jobId;errors=0;}
+   }catch(_){}
+   if(errors>=12){
+    update('No se pudo consultar el estado en Render. El archivo MP4 está guardado; abre «Administrar y eliminar películas de R2» para comprobar su verificación. No necesitas volver a subirlo.');
+    return false;
+   }
+   update('Película guardada en R2. Recuperando el estado de verificación ('+errors+'/12)…');
+   await new Promise(resolve=>setTimeout(resolve,5000));
+   continue;
+  }
+  const phase=phases[result.phase]||'Preparando película';
+  update(phase+' · '+(Math.max(0,Math.min(100,Number(result.percent)||0)))+' % · '+String(result.message||''));
+  if(result.completed){
+   try{
+    const data=await privateRequest('/api/private/admin/catalog',key,true);
+    const pending=(data.items||[]).filter(x=>['review','new'].includes(x.status));
+    if(pending.length){
+     update('MP4 compatible y guardado en R2. Falta identificar el título y la portada.');
+     await privateReviewAdmin();
+    }else{
+     update('MP4 verificado y compatible. Película lista para reproducirse en NÉVIX TV.');
+    }
+   }catch(_){update('MP4 reparado y verificado. Actualiza el catálogo de Películas.');}
+   if(privateFamilyCode)await loadPrivateMovies();
+   return true;
+  }
+  if(result.failed){
+   update('La verificación no pudo completarse: '+String(result.message||'Comprueba el MP4.')+'. El original sigue almacenado y no se publicará hasta corregirlo.');
+   return false;
+  }
+  await new Promise(resolve=>setTimeout(resolve,5000));
+ }
+ update('El MP4 sigue pendiente de confirmación. Su archivo está guardado; revisa su estado desde Administración.');
+ return false;
+}
 async function privateUploadAdmin(){
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  const file=document.getElementById('private-film-file')?.files?.[0];
@@ -2277,14 +2332,18 @@ async function privateUploadAdmin(){
   const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId});
   if(!done?.stored)throw Error('R2 todavía no confirmó la película completa.');
   sessionId='';privateClearUpload();
-  if(done.metadataPending){
-   update('Película MP4 guardada y verificada. El catálogo debe actualizarse.');
+  if(done.autoProcessing&&done.jobId){
+   update('MP4 cargado. Iniciando verificación automática de compatibilidad y reparación si hace falta…');
+   await privateWatchAutomaticMovie(key,done,update);
+  }else if(done.validationError){
+   update('MP4 guardado, pero la verificación automática no pudo iniciarse: '+String(done.validationError)+'. Revisa el archivo desde Administración.');
+  }else if(done.metadataPending){
+   update('MP4 guardado en R2; no se confirmó el inicio de la verificación. Consulta su estado en Administración antes de reproducirlo.');
   }else if(Number(done.pending)>0){
-   update('MP4 guardado. Falta identificar el título y la portada. Pulsa «Revisar pendientes».');
+   update('MP4 almacenado. Comprueba el proceso automático y los títulos pendientes en Administración.');
    await privateReviewAdmin();
   }else{
-   update('MP4 verificado y registrado en Cloudflare R2. Ya puedes probar la reproducción.');
-   if(privateFamilyCode)await loadPrivateMovies();
+   update('MP4 guardado en R2. Consulta su estado de compatibilidad antes de reproducirlo.');
   }
  }catch(e){
   const message=String(e?.message||'Error de transferencia.');
