@@ -203,6 +203,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    converted.description=source.description;
    converted.status='ready';
    converted.convertedFrom=source.id;
+   converted.standardMp4=true;
    converted.size=size;
    source.status='backup';
    source.replacedBy=converted.id;
@@ -269,7 +270,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
      preferProxy=check.ok&&mime!=='video/mp4'&&mime!=='video/webm';
      if(check.body){try{await check.body.cancel();}catch(_){}}
     }catch(_){/* Browser watchdog may use the fallback if required. */}
-    return reply(res,200,{url:signed,expiresIn:240,fallbackPath:fallback.path,fallbackExpiresIn:fallback.expiresIn,preferProxy,type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
+    return reply(res,200,{url:signed,expiresIn:240,fallbackPath:fallback.path,fallbackExpiresIn:fallback.expiresIn,preferProxy,standardMp4:Boolean(item.standardMp4),type:item.key.endsWith('.webm')?'video/webm':'video/mp4'});
    }
    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
    if(url.pathname==='/api/private/upload/direct'){
