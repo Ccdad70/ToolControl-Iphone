@@ -1,8 +1,5 @@
 import http from 'node:http';
-import { spawnSync } from 'node:child_process';
-import { statfsSync } from 'node:fs';
 import { createPrivateFilmService } from './private-films.mjs';
-import { FFMPEG_BIN, FFPROBE_BIN } from './private-remux.mjs';
 const PORT=Number(process.env.PORT||10000);
 const KEY=String(process.env.WATCHMODE_API_KEY||'').trim();
 const TMDB_KEY=String(process.env.TMDB_API_KEY||'').trim();
@@ -185,15 +182,8 @@ const server=http.createServer(async(req,res)=>{
 });
 server.listen(PORT,'0.0.0.0',()=>{
  console.log('NÉVIX catalog ready; configured='+Boolean(KEY)+'; mode=combined; tmdb_posters='+Boolean(TMDB_KEY));
- try{
-  const ffprobe=spawnSync(FFPROBE_BIN,['-version'],{encoding:'utf8',timeout:2500});
-  const ffmpeg=spawnSync(FFMPEG_BIN,['-version'],{encoding:'utf8',timeout:2500});
-  const fs=statfsSync('/tmp');
-  const freeGB=Math.round((fs.bavail*fs.bsize)/(1024**3)*100)/100;
-  console.log('NÉVIX remux readiness: ffprobe='+(!ffprobe.error&&ffprobe.status===0)+' ffmpeg='+(!ffmpeg.error&&ffmpeg.status===0)+' tmp_free_gb='+freeGB);
- }catch(e){console.log('NÉVIX remux readiness: unavailable category='+String(e?.code||e?.name||'unknown').slice(0,50));}
  void privateFilms.checkConnection().then(result=>{
-  console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
+  console.log('NÉVIX Cloudflare R2 storage probe: configured='+privateFilms.configured+' connected='+result.ok+' reason='+result.reason+(result.issues?.length?' invalid_fields='+result.issues.join(',') : ''));
  }).catch(()=>console.log('NÉVIX Telnyx storage probe: configured='+privateFilms.configured+' connected=false reason=probe_failed'));
 });
 
