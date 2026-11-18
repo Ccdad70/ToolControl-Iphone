@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
-import { createPrivateRemux } from './private-remux.mjs';
+import { createPrivateRemux, verifyMultipartStorage } from './private-remux.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -183,7 +183,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  }
  const remux=configured?createPrivateRemux({
   client,bucket,
-  uploadObject:(key,file,size)=>rawUploadPart(key,null,0,file,size,'video/mp4'),
   finalize:async(original,key,size)=>{
    // Verify persisted object before switching the catalog to its new copy.
    const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
@@ -359,6 +358,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    // Keep the routine startup probe small; a separate 8 MiB transfer was verified successfully.
    const content=Buffer.from('NEVIX-STREAM-TEST');
    await rawUploadPart(streamKey,null,0,(async function*(){yield content;})(),content.length);
+   stage='multipart_probe';
+   await verifyMultipartStorage(client,bucket);
+   console.log('NÉVIX Telnyx multipart upload probe: ok=true verified_parts=2 bytes=5373952');
    stage='catalog_sync';
    const rows=await sync(true);
    console.log('NÉVIX private catalog sync: total='+rows.length+' ready='+rows.filter(x=>x.status==='ready').length+' pending='+rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length);
