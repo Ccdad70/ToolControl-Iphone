@@ -300,7 +300,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(!item)return reply(res,404,{error:'movie_not_found',message:'Selecciona una película disponible del catálogo.'});
     const result=remux.start(item);
     if(result.busy)return reply(res,409,{error:'remux_busy',job:result.job,message:'Ya se está preparando otra película.'});
-    if(result.error)return reply(res,400,{error:result.error,message:'El archivo no puede prepararse en este servidor.'});
+    if(result.error)return reply(res,503,{error:result.error,message:result.error==='media_tools_unavailable'?'Las herramientas FFmpeg/FFprobe no están disponibles en el servidor. El archivo original no fue modificado.':'El archivo no puede prepararse en este servidor.'});
     return reply(res,202,{ok:true,job:result.job});
    }
    if(url.pathname==='/api/private/remux/status'){
