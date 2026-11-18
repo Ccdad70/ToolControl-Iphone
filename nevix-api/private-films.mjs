@@ -271,7 +271,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     stage='video_range';
     // Check that the temporary URL can actually read the object, without
     // downloading a complete movie or exposing its link in logs.
-    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-1023'},signal:AbortSignal.timeout(20000)});
+    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-8191'},signal:AbortSignal.timeout(20000)});
     const playbackCode=playback.status;
     if(playbackCode!==206&&playbackCode!==200){
      if(playback.body){try{await playback.body.cancel();}catch(_){}}
@@ -301,10 +301,12 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
       if(length===0)length=total-pos;
       if(!Number.isSafeInteger(length)||length<8||pos+length>total)break;
       boxes.push(type+':'+length);
-      if(type==='moov'){foundMoov=true;break;}
+      if(type==='moov')foundMoov=true;
       pos+=length;
      }
-     console.log('NÉVIX Telnyx mp4 container probe: top_level='+boxes.join(',').slice(0,290)+' moov_found='+foundMoov+' total_bytes='+total);
+     const samples=['avc1','avc3','hvc1','hev1','av01','vp09','mp4a','ac-3','ec-3','encv','enca','pssh','mvex','moof'];
+     const signatures=samples.filter(x=>firstBytes.includes(Buffer.from(x)));
+     console.log('NÉVIX Telnyx mp4 container probe: top_level='+boxes.join(',').slice(0,290)+' moov_found='+foundMoov+' video_signatures='+signatures.join(',')+' total_bytes='+total);
     }
     console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
