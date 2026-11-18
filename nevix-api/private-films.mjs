@@ -267,8 +267,15 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(firstReady){
     stage='presigned_url';
     // Probe is private, with a short TTL. Never log the temporary URL or any credentials.
-    await telnyxSignedUrl(firstReady.key,240);
-    console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240');
+    const playbackUrl=await telnyxSignedUrl(firstReady.key,240);
+    stage='video_range';
+    // Check that the temporary URL can actually read the object, without
+    // downloading a complete movie or exposing its link in logs.
+    const playback=await fetch(playbackUrl,{method:'GET',headers:{Range:'bytes=0-63'},signal:AbortSignal.timeout(20000)});
+    const playbackCode=playback.status;
+    if(playback.body){try{await playback.body.cancel();}catch(_){}}
+    if(playbackCode!==200&&playbackCode!==206)throw {name:'TelnyxVideoReadFailed',$metadata:{httpStatusCode:playbackCode}};
+    console.log('NÉVIX Telnyx private playback link probe: verified=true ttl=240 video_http='+playbackCode+' range_supported='+(playbackCode===206));
    }
    return {ok:true,reason:firstReady?'bucket_read_write_and_presign_ok':'bucket_read_write_and_catalog_sync_ok'};
   }catch(e){
