@@ -183,6 +183,12 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname.startsWith('/api/private/')){await privateFilms.handle(req,res,url);return;}
  if(req.method!=='GET'){send(res,405,{error:'method_not_allowed'});return;}
  try{
+  if(url.pathname==='/api/movies'||url.pathname==='/api/series'||/^\/api\/movie\/[0-9]{1,12}$/.test(url.pathname)){
+   if(!(await privateFilms.netflixEnabled())){
+    send(res,403,{error:'netflix_catalog_disabled',message:'El catálogo de Netflix está desactivado por administración.'});
+    return;
+   }
+  }
   if(url.pathname==='/api/movies'||url.pathname==='/api/series'){
    const page=Number(url.searchParams.get('page')||1);
    const section=String(url.searchParams.get('section')||'popular');
@@ -209,6 +215,8 @@ server.listen(PORT,'0.0.0.0',()=>{
 
 async function checkCatalogHealth(){
  if(!KEY)return;
+ try{if(!(await privateFilms.netflixEnabled())){console.log('NÉVIX Netflix catalog health check skipped: disabled');return;}}
+ catch(_){console.log('NÉVIX Netflix catalog health check skipped: settings unavailable');return;}
  for(const [kind,type] of [['movie','movie'],['series','tv_series']]){
   // Comprobar varias entradas reales de cada país y sus imágenes. Nunca registrar claves.
   const results=await Promise.allSettled(['US','CO'].map(regions=>query('/list-titles',{types:type,regions,source_ids:'203',source_types:'sub',sort_by:'popularity_desc',page:1,limit:6})));
