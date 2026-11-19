@@ -375,6 +375,21 @@ footer{color:#a88d94;border-color:#48121f}
 }
 @media(max-width:390px){.cinema-nav{max-width:calc(100vw - 195px)}.cinema-logo{font-size:15px}}
 </style>
+<style id="nevix-netflix-switch-style">
+.nevix-netflix-panel{margin:15px 0;padding:15px;border:1px solid #9a3449;border-radius:15px;background:linear-gradient(125deg,#2c121b,#16101b)}
+.nevix-netflix-panel-head{display:flex;align-items:center;justify-content:space-between;gap:15px}
+.nevix-netflix-panel-head strong{font-size:17px;color:#fff}
+.nevix-netflix-panel-head p{margin:7px 0 0}
+.nevix-netflix-toggle{position:relative;display:inline-flex;align-items:center;width:64px;height:37px;flex:none;cursor:pointer}
+.nevix-netflix-toggle input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2}
+.nevix-netflix-toggle input:disabled{cursor:wait}
+.nevix-netflix-track{width:64px;height:36px;display:block;border:1px solid #76565f;border-radius:40px;background:#4b3d43;box-shadow:inset 0 2px 5px #0008}
+.nevix-netflix-track:before{content:'';position:absolute;top:6px;left:6px;width:25px;height:25px;background:#fff;border-radius:50%;box-shadow:0 2px 5px #0007;transition:transform .2s}
+.nevix-netflix-toggle input:checked+.nevix-netflix-track{background:#ee2448;border-color:#f56c7e}
+.nevix-netflix-toggle input:checked+.nevix-netflix-track:before{transform:translateX(28px)}
+.nevix-netflix-toggle input:focus-visible+.nevix-netflix-track{outline:3px solid #7bdcff;outline-offset:3px}
+.nevix-netflix-toggle input:disabled+.nevix-netflix-track{opacity:.5}
+</style>
 </head>
 <body>
 <div class="app-shell" id="app-shell">
@@ -2038,6 +2053,7 @@ function privateAdminSection(){
  +'<p>Las películas subidas aparecerán automáticamente en Películas tras identificar su portada. Los espectadores no verán ninguna sección de biblioteca privada.</p>'
  +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Cloudflare R2 está conectado y permite subir MP4.':'Para activarlo configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y los códigos NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
+ +'<div class="nevix-netflix-panel"><div class="nevix-netflix-panel-head"><div><strong>Mostrar catálogo de Netflix</strong><p class="hint">Interruptor general para todos los dispositivos. No afecta las películas propias ni la TV en vivo.</p></div><label class="nevix-netflix-toggle"><input type="checkbox" id="netflix-catalog-switch" role="switch" aria-label="Activar o desactivar Netflix" '+(netflixCatalogEnabled?'checked ':'')+(!netflixSettingsLoaded||netflixSettingsSaving?'disabled':'')+'><span class="nevix-netflix-track"></span></label></div><p id="netflix-catalog-state" class="hint" aria-live="polite">'+(!netflixSettingsLoaded?'Consultando configuración…':netflixCatalogEnabled?'Netflix activado.':'Netflix desactivado.')+'</p></div>'
  +'<label class="field">Selecciona varias películas (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB por archivo)<input type="file" id="private-film-file" multiple accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*" '+(privateBatchRunning?'disabled':'')+'></label>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload" '+(privateBatchRunning?'disabled':'')+'>☁ Subir películas seleccionadas</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Revisar o preparar video (manual)</button></div>'
@@ -3163,13 +3179,130 @@ document.addEventListener('click',async e=>{const target=e.target.closest('[data
   case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
-document.addEventListener('change',e=>{if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
+document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
 document.addEventListener('input',e=>{if(e.target.id==='live-search'){const pos=e.target.selectionStart;state.liveQuery=e.target.value;state.liveShown=100;render();const inp=$('#live-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='movie-search'){const pos=e.target.selectionStart;state.movieQuery=e.target.value;render();const inp=$('#movie-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='series-search'){const pos=e.target.selectionStart;state.seriesQuery=e.target.value;render();const inp=$('#series-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='global-search'){const pos=e.target.selectionStart;state.search=e.target.value;const grid=$('#main .tile-grid');const result=chooseItems(allItems(),{q:state.search});const heading=$('#main .section-head h2');if(heading)heading.textContent=state.search?`${result.length} resultado(s)`:'Todo el contenido';if(grid)grid.innerHTML=seriesOnce(result.filter(x=>x.kind==='series')).concat(result.filter(x=>x.kind!=='series')).map(x=>card(x,true)).join('');else if(result.length){render({focusSearch:true});const inp=$('#global-search');inp?.setSelectionRange(pos,pos);}}});
 document.addEventListener('keydown',e=>{if((e.key==='Escape'||e.key==='Backspace')&&document.querySelector('.cinema-preview.nevix-preview-expanded')){e.preventDefault();document.querySelector('.cinema-preview.nevix-preview-expanded')?.classList.remove('nevix-preview-expanded');document.documentElement.classList.remove('nevix-theater-lock');document.body.classList.remove('nevix-theater-lock');return;}if(e.key==='Escape'||e.key==='Backspace'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){if(els.player.innerHTML){const s=document.querySelector('#player-root .player-shell');if(s&&(s.classList.contains('nevix-expanded')||document.fullscreenElement===s||document.webkitFullscreenElement===s)){e.preventDefault();exitPlayerFullscreen();return;}closePlayer();return;}if(els.modal.innerHTML){closeDetail();return;}$('#sidebar').classList.remove('open');}if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key) && !['INPUT','TEXTAREA','SELECT','VIDEO'].includes(document.activeElement?.tagName)&&!els.player.innerHTML){const focusables=[...document.querySelectorAll('button:not(:disabled),a[href]')].filter(el=>el.getBoundingClientRect().width>0);if(focusables.length){let i=focusables.indexOf(document.activeElement);if(i<0)return;let step=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;let next=focusables[(i+step+focusables.length)%focusables.length];if(next){e.preventDefault();next.focus({preventScroll:false});}}}});
 window.addEventListener('hashchange',()=>{const requested=location.hash.slice(1);if(requested==='netflix'||requested==='free'){go('movie');return;}if(NAMES[requested]&&requested!==state.view){state.view=requested;state.category='Todos';state.search='';render();if(requested==='movie'&&!state.movieAttempted)void loadWatchmodeCatalog();if(requested==='series'&&!state.seriesAttempted)void loadWatchmodeSeries();}});
+
+/* NÉVIX: preferencia global del catálogo externo, almacenada en R2. */
+let netflixCatalogEnabled=false,netflixSettingsLoaded=false,netflixSettingsSaving=false;
+let netflixSettingsRequest=null,netflixSettingsRevision=0;
+function isNetflixCatalogItem(it){
+ if(!it||it.kind==='live'||it.privateMovie)return false;
+ return it.watchmode===true||it.netflix===true||
+  /^https:\/\/(?:www\.)?netflix\.com\//i.test(String(it.url||''))||
+  /netflix/i.test(String(it.source||''));
+}
+const oldMovieCatalogItems=movieCatalogItems;
+movieCatalogItems=function(){return oldMovieCatalogItems().filter(it=>netflixCatalogEnabled||!isNetflixCatalogItem(it));};
+const oldSeriesCatalogItems=seriesCatalogItems;
+seriesCatalogItems=function(){return oldSeriesCatalogItems().filter(it=>netflixCatalogEnabled||!isNetflixCatalogItem(it));};
+const oldAllItems=allItems;
+allItems=function(){return oldAllItems().filter(it=>netflixCatalogEnabled||!isNetflixCatalogItem(it));};
+const oldRenderCatalog=renderCatalog;
+renderCatalog=function(kind){
+ if(netflixCatalogEnabled)return oldRenderCatalog(kind);
+ const own=allItems().filter(it=>it.kind===kind&&!it.privateMovie);
+ const q=kind==='movie'?state.movieQuery:state.seriesQuery;
+ const result=chooseItems(kind==='series'?seriesOnce(own):own,{q});
+ const field=kind==='movie'?'movie-search':'series-search';
+ const word=kind==='movie'?'películas':'series';
+ return pageTitle(kind==='movie'?'Películas':'Series','Disfruta de las películas y series de tu biblioteca NÉVIX.')
+  +'<div class="live-tools"><label class="live-search-label">⌕ <input type="search" id="'+field+'" value="'+esc(q)+'" placeholder="Buscar '+word+'…" autocomplete="off"></label></div>'
+  +(kind==='movie'?privateFilmRail():'')
+  +(result.length?'<section class="catalog-rail"><div class="section-head"><h2>Mi biblioteca</h2></div><div class="tile-grid">'+result.map(it=>card(it,true)).join('')+'</div></section>':(kind==='series'||!privateMovies.length?'<p class="hint">Por ahora no hay '+word+' disponibles.</p>':''));
+};
+const oldLoadWatchmodeCatalog=loadWatchmodeCatalog;
+loadWatchmodeCatalog=function(){if(netflixCatalogEnabled)return oldLoadWatchmodeCatalog();};
+const oldLoadWatchmodeSeries=loadWatchmodeSeries;
+loadWatchmodeSeries=function(){if(netflixCatalogEnabled)return oldLoadWatchmodeSeries();};
+const oldLoadWatchmodeSection=loadWatchmodeSection;
+loadWatchmodeSection=function(section,next){if(netflixCatalogEnabled)return oldLoadWatchmodeSection(section,next);};
+const oldLoadWatchmodeSeriesSection=loadWatchmodeSeriesSection;
+loadWatchmodeSeriesSection=function(section,next){if(netflixCatalogEnabled)return oldLoadWatchmodeSeriesSection(section,next);};
+const oldOpenWatchmodeTitle=openWatchmodeTitle;
+openWatchmodeTitle=function(it){if(!netflixCatalogEnabled)return toast('Este catálogo está desactivado.');return oldOpenWatchmodeTitle(it);};
+const oldRenderHome=renderHome;
+renderHome=function(){
+ if(netflixCatalogEnabled)return oldRenderHome();
+ const oldMovies=state.movieRecentItems,oldPopular=state.moviePopularItems,oldSeries=state.seriesRecentItems,oldSeriesPopular=state.seriesPopularItems;
+ // El render original solo utiliza estos arreglos para recomendaciones externas.
+ state.movieRecentItems=[];state.moviePopularItems=[];state.seriesRecentItems=[];state.seriesPopularItems=[];
+ try{
+  let page=oldRenderHome();
+  page=page.replace(/<p class="hint">Las películas y series se abren en sus proveedores oficiales; algunas requieren una suscripción\.[\s\S]*?<\/p><\/div>$/,'<p class="hint">Las señales de TV dependen de la disponibilidad del emisor.</p></div>');
+  return page;
+ }finally{
+  state.movieRecentItems=oldMovies;state.moviePopularItems=oldPopular;state.seriesRecentItems=oldSeries;state.seriesPopularItems=oldSeriesPopular;
+ }
+};
+function refreshNetflixAdmin(message=''){
+ const input=document.getElementById('netflix-catalog-switch');
+ if(input){input.checked=netflixCatalogEnabled;input.disabled=!netflixSettingsLoaded||netflixSettingsSaving;}
+ const label=document.getElementById('netflix-catalog-state');
+ if(label)label.textContent=message||(!netflixSettingsLoaded?'Configuración no disponible; Netflix oculto.':netflixSettingsSaving?'Guardando…':netflixCatalogEnabled?'Netflix activado: catálogo y series visibles.':'Netflix desactivado: películas, series y rankings ocultos.');
+}
+function applyNetflixSetting(enabled){
+ enabled=Boolean(enabled);
+ const changed=enabled!==netflixCatalogEnabled;
+ netflixCatalogEnabled=enabled;
+ if(changed){
+  state.movieRecentItems=[];state.moviePopularItems=[];state.seriesRecentItems=[];state.seriesPopularItems=[];
+  state.movieAttempted=false;state.seriesAttempted=false;
+  state.moviePage={recent:0,popular:0};state.seriesPage={recent:0,popular:0};
+  state.movieTotalPages={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};
+  state.movieError='';state.seriesError='';
+  try{localStorage.removeItem(CATALOG_CACHE_KEY);}catch(_){}
+  if(state.selected&&!itemById(state.selected))closeDetail();
+  if(state.view!=='admin')render();
+  if(enabled){
+   if(state.view==='inicio'||state.view==='movie')loadWatchmodeCatalog();
+   if(state.view==='inicio'||state.view==='series')loadWatchmodeSeries();
+  }
+ }
+ refreshNetflixAdmin();
+}
+async function loadNetflixSettings(){
+ if(netflixSettingsSaving)return;
+ if(netflixSettingsRequest)return netflixSettingsRequest;
+ const version=netflixSettingsRevision;
+ netflixSettingsRequest=(async()=>{
+  try{
+   const response=await fetch(WATCHMODE_BACKEND+'/api/private/netflix-settings',{cache:'no-store',signal:AbortSignal.timeout(15000)});
+   const data=await response.json();
+   if(!response.ok||typeof data.enabled!=='boolean')throw Error('Estado no disponible');
+   if(version!==netflixSettingsRevision||netflixSettingsSaving)return;
+   netflixSettingsLoaded=true;applyNetflixSetting(data.enabled);
+  }catch(_){
+   if(version!==netflixSettingsRevision||netflixSettingsSaving)return;
+   netflixSettingsLoaded=false;applyNetflixSetting(false);
+   refreshNetflixAdmin('No se pudo consultar la configuración. Netflix permanece oculto.');
+  }
+ })().finally(()=>{netflixSettingsRequest=null;});
+ return netflixSettingsRequest;
+}
+async function saveNetflixSettings(enabled){
+ if(netflixSettingsSaving)return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ if(!key){refreshNetflixAdmin();toast('Introduce el código de administración para cambiar Netflix.');return;}
+ netflixSettingsSaving=true;netflixSettingsRevision++;refreshNetflixAdmin();
+ try{
+  const result=await privateRequest('/api/private/netflix-settings',key,true,'POST',{enabled:Boolean(enabled)});
+  if(result?.ok!==true||result.enabled!==Boolean(enabled))throw Error('Cambio no confirmado');
+  netflixSettingsSaving=false;netflixSettingsLoaded=true;applyNetflixSetting(result.enabled);
+  toast(enabled?'Netflix activado para todos los dispositivos.':'Netflix desactivado para todos los dispositivos.');
+ }catch(e){
+  netflixSettingsSaving=false;refreshNetflixAdmin('No se confirmó el cambio: '+String(e?.message||'Error')+'.');
+  toast('No se pudo guardar la preferencia. Comprueba la conexión y el código.');
+  void loadNetflixSettings();
+ }
+}
+
 // No se registra un service worker: evita recibir versiones antiguas de la interfaz.
-if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();if(state.view==='movie')void loadWatchmodeCatalog();if(state.view==='series')void loadWatchmodeSeries();if(state.view==='inicio'){void loadWatchmodeCatalog();void loadWatchmodeSeries();}
+if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();void loadNetflixSettings();
 void privateCheckStatus();
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void loadNetflixSettings();});
+setInterval(()=>{if(document.visibilityState==='visible')void loadNetflixSettings();},45000);
 if(privateFamilyCode)void loadPrivateMovies();
 setInterval(()=>{if(privateFamilyCode&&document.visibilityState==='visible')void loadPrivateMovies();},180000);
 
