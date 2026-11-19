@@ -5,6 +5,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 
 const PREFIX='peliculas/';
 const INDEX='nevix-meta/peliculas.json';
+const NETFLIX_SETTINGS_KEY='nevix-meta/netflix-catalog-settings.json';
 const MAX_UPLOAD=5*1024*1024*1024-1024;
 const SUPPORTED=/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i;
 const OUTPUT_MP4=/\.mp4$/i;
@@ -56,6 +57,33 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   if(!Number.isSafeInteger(expires)||expires<=Date.now()||expires>Date.now()+VIDEO_TOKEN_TTL_MS+2000)return false;
   const actual=Buffer.from(signature,'hex'),expected=Buffer.from(videoSig(id,expires),'hex');
   return timingSafeEqual(actual,expected);
+ }
+ // Preferencia global almacenada en R2, separada de las películas y sus respaldos.
+ let netflixConfig=null,netflixCacheAt=0,netflixPending=null;
+ async function netflixEnabled(force=false){
+  if(!configured)throw {status:503,error:'settings_unavailable',message:'No se pudo consultar la configuración general de NÉVIX TV.'};
+  if(!force&&netflixConfig!==null&&Date.now()-netflixCacheAt<3000)return netflixConfig;
+  if(netflixPending)return netflixPending;
+  netflixPending=(async()=>{
+   let enabled=true;
+   try{
+    const response=await client.send(new GetObjectCommand({Bucket:bucket,Key:NETFLIX_SETTINGS_KEY}));
+    const value=JSON.parse(await response.Body.transformToString());
+    if(typeof value.enabled!=='boolean')throw Error('netflix_settings_invalid');
+    enabled=value.enabled;
+   }catch(error){
+    if(!(error?.name==='NoSuchKey'||error?.name==='NotFound'||error?.$metadata?.httpStatusCode===404))throw error;
+   }
+   netflixConfig=enabled;netflixCacheAt=Date.now();
+   return enabled;
+  })().finally(()=>{netflixPending=null;});
+  return netflixPending;
+ }
+ async function saveNetflixSetting(enabled){
+  await client.send(new PutObjectCommand({Bucket:bucket,Key:NETFLIX_SETTINGS_KEY,
+   ContentType:'application/json',Body:JSON.stringify({enabled,updatedAt:new Date().toISOString(),version:1})}));
+  netflixConfig=enabled;netflixCacheAt=Date.now();
+  return enabled;
  }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
@@ -194,6 +222,18 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  }
  async function handle(req,res,url){
   try{
+   if(url.pathname==='/api/private/netflix-settings'){
+    if(req.method==='GET')return reply(res,200,{enabled:await netflixEnabled(),scope:'global'});
+    if(req.method==='POST'){
+     if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied',message:'Código de administración incorrecto.'});
+     const data=await body(req);
+     if(typeof data.enabled!=='boolean')return reply(res,400,{error:'invalid_enabled',message:'Indica un estado válido para Netflix.'});
+     const enabled=await saveNetflixSetting(data.enabled);
+     console.log('NÉVIX Netflix catalog setting changed: enabled='+enabled);
+     return reply(res,200,{ok:true,enabled,scope:'global'});
+    }
+    return reply(res,405,{error:'method_not_allowed'});
+   }
    if(url.pathname==='/api/private/status'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround'});
@@ -399,5 +439,5 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    console.log('NÉVIX MP4 playback scan: size_mb='+Math.round(fileSize/1048576)+' range='+rangeSupported+' moov='+(moovAt>=0?(mdatAt>=0&&moovAt>mdatAt?'after_mdat':'before_mdat'):'not_found')+' atoms='+boxes.join(',').slice(0,180));
   }catch(err){console.error('NÉVIX MP4 playback scan failed: stage='+stage+' reason='+String(err?.name||'Error').slice(0,42)+' http='+String(err?.$metadata?.httpStatusCode||'none'));}
  }
- return {handle,configured,checkConnection,checkPlayback,recoverAutoJobs};
+ return {handle,configured,checkConnection,checkPlayback,recoverAutoJobs,netflixEnabled};
 }
