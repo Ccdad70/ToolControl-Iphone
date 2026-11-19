@@ -1765,7 +1765,7 @@ function renderHome(){
  const action=featured?'data-action="play" data-id="'+esc(featured.id)+'"':'data-action="nav" data-view="movie"';
  const heroTitle=featured?esc(displayTitle(featured)):'Todo tu entretenimiento';
  const heroDesc=featured?esc(featured.description||'Explora esta historia y descubre dónde verla en su plataforma oficial.'):'Descubre películas, series, televisión en vivo y tus canales favoritos en un solo lugar.';
- const categories=[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['movie','♛','Ranking'],['movie','✧','Últimos estrenos'],['favorites','♡','Favoritos']];
+ const categories=netflixCatalogEnabled?[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['movie','♛','Ranking'],['movie','✧','Últimos estrenos'],['favorites','♡','Favoritos']]:[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['favorites','♡','Favoritos']];
  const categoryTiles=categories.map(([view,icon,title])=>'<button class="cinema-cat" data-action="nav" data-view="'+view+'"><span class="cinema-cat-icon" aria-hidden="true">'+icon+'</span><strong>'+title+'</strong></button>').join('');
  const countries=['ve','us','co','ar','pt'].map(code=>COUNTRIES.find(c=>c[0]===code)).filter(Boolean).map(c=>'<button class="cinema-country" data-action="home-country" data-code="'+c[0]+'"><span class="flag" aria-hidden="true">'+c[1]+'</span><span>'+esc(c[2])+'</span></button>').join('');
  const liveCards=live.slice(0,18).map(it=>'<button class="cinema-channel" data-action="home-preview" data-id="'+esc(it.id)+'" aria-label="Vista previa de '+esc(it.title)+'"><span class="channel-image">'+artwork(it)+'</span><span class="channel-caption">'+esc(it.short||it.title)+'</span></button>').join('');
@@ -1802,6 +1802,7 @@ async function loadWatchmodeSection(section,next=false){
  try{
   const res=await fetch(WATCHMODE_BACKEND+'/api/movies?section='+section+'&page='+page,{cache:'no-store',signal:AbortSignal.timeout(50000)});
   const data=await res.json();
+  if(!netflixCatalogEnabled)return;
   if(!res.ok)throw Error(data.error==='missing_key'?'Es necesario configurar Watchmode en Render.':data.message||'No se pudo consultar el catálogo.');
   const key=section==='recent'?'movieRecentItems':'moviePopularItems';
   const mapped=(Array.isArray(data.titles)?data.titles:[]).map(x=>mapMovie(x,section));
@@ -1849,6 +1850,7 @@ async function loadWatchmodeSeriesSection(section,next=false){
  try{
   const res=await fetch(WATCHMODE_BACKEND+'/api/series?section='+section+'&page='+page,{cache:'no-store',signal:AbortSignal.timeout(50000)});
   const data=await res.json();
+  if(!netflixCatalogEnabled)return;
   if(!res.ok)throw Error(data.error==='missing_key'?'Es necesario configurar Watchmode en Render.':data.message||'No se pudo consultar el catálogo de series.');
   const key=section==='recent'?'seriesRecentItems':'seriesPopularItems';
   const mapped=(Array.isArray(data.titles)?data.titles:[]).map(x=>mapWatchmodeSeries(x,section));
@@ -3249,6 +3251,7 @@ function applyNetflixSetting(enabled){
  if(changed){
   state.movieRecentItems=[];state.moviePopularItems=[];state.seriesRecentItems=[];state.seriesPopularItems=[];
   state.movieAttempted=false;state.seriesAttempted=false;
+  state.movieLoading={recent:false,popular:false};state.seriesLoading={recent:false,popular:false};
   state.moviePage={recent:0,popular:0};state.seriesPage={recent:0,popular:0};
   state.movieTotalPages={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};
   state.movieError='';state.seriesError='';
