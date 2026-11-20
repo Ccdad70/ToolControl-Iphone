@@ -2735,78 +2735,85 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   else privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
  }finally{row.waitingStart=false;if(row.phase!=='failed')row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
 }
-async function privateRetryUpload(id){
+function privateRetryUpload(id){
  const row=privateBatchUploads.find(x=>x.id===String(id||''));
  if(!row||row.phase!=='failed'||row.cancelRequested)return;
- if(privateBatchRunning)return toast('Espera a que finalice el lote actual antes de continuar otra subida.');
- if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para reanudar los bloques que todavía estén guardados.');
+ if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para recuperar sus bloques confirmados.');
  const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
- if(!key)return toast('Introduce el código de administración del servidor.');
- privateBatchRunning=true;row.retrying=true;
- privateUpdateUploadRow(row,'Consultando los bloques existentes antes de continuar…',row.percent,'queued');
- const inp=document.getElementById('private-film-file');if(inp)inp.disabled=true;
- const btn=document.querySelector('[data-action="private-upload"]');if(btn)btn.disabled=true;
- try{await privateUploadOneFilm(row.file,key,row,true);}
- finally{
-  row.retrying=false;privateBatchRunning=false;
-  const fileInput=document.getElementById('private-film-file');if(fileInput)fileInput.disabled=false;
-  const button=document.querySelector('[data-action="private-upload"]');if(button)button.disabled=false;
-  privateRenderUploadBatch(true);
- }
+ if(!key)return toast('Introduce el código de administración.');
+ row.uploadKey=key;row.retrying=true;row.allowLegacy=true;
+ privateUpdateUploadRow(row,'En cola para recuperar los bloques anteriores…',row.percent,'queued');
+ void privateDrainUploadQueue();
 }
-async function privateUploadAdmin(){
+async function privateDrainUploadQueue(){
  if(privateBatchRunning)return;
- const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- const input=document.getElementById('private-film-file'),picked=privateUploadDrafts.map(x=>x.file);
- if(!key){toast('Introduce tu código de administración.');return;}
- if(!picked.length){toast('Selecciona una o varias películas.');return;}
- privateReadUploadDraftValues();
- const drafts=new Map(privateUploadDrafts.map(x=>[privateFileToken(x.file),x]));
- const seen=new Set(),files=picked.filter(f=>{const token=privateFileToken(f);if(seen.has(token))return false;seen.add(token);return true;});
- const bad=files.map(file=>drafts.get(privateFileToken(file))||privateFilmNameHint(file))
-  .find(x=>String(x.title||'').trim().length<2||String(x.title||'').trim().length>130||x.year&&!/^(19|20)\d{2}$/.test(String(x.year)));
- if(bad){toast('Revisa el título y año de cada película antes de subirla.');return;}
- const rows=files.map((file,i)=>({
-  id:String(Date.now())+'-'+i,name:file.name,title:String((drafts.get(privateFileToken(file))||privateFilmNameHint(file)).title||'').trim(),year:String((drafts.get(privateFileToken(file))||privateFilmNameHint(file)).year||''),size:file.size,file,token:privateFileToken(file),sessionId:'',uploadKey:key,percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
-  phase:/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(file.name)&&file.size>0&&file.size<5*1024*1024*1024?'queued':'failed',
-  detail:'Esperando turno de transferencia'
- }));
- for(const r of rows.filter(r=>r.phase==='failed'))r.detail='Formato no admitido o archivo superior a 5 GiB.';
- privateBatchUploads.push(...rows);
- privateRenderUploadBatch(true);
- const waiting=rows.filter(r=>r.phase==='queued');
- if(!waiting.length){toast('No se seleccionaron archivos válidos.');return;}
  privateBatchRunning=true;
- if(input)input.disabled=true;
- const btn=document.querySelector('[data-action="private-upload"]');
- if(btn)btn.disabled=true;
  try{
   const ready=await privateRequest('/api/private/status','');
   if(!ready.configured||!ready.uploadReady)throw Error('Cloudflare R2 todavía no está listo. Comprueba la conexión.');
-  let next=0;
-  await Promise.all(Array.from({length:Math.min(2,waiting.length)},async()=>{
+  // Dynamic queue: workers pick up new submissions after their active upload finishes.
+  // Two workers maximum, keeping below the R2 backend's session limit.
+  await Promise.all(Array.from({length:2},async()=>{
    for(;;){
-    const i=next++;
-    if(i>=waiting.length)break;
-    const row=waiting[i];
-    if(row.cancelRequested||!row.file)continue;
-    await privateUploadOneFilm(row.file,key,row,waiting.length===1);
+    const row=privateBatchUploads.find(r=>r.phase==='queued'&&!r.dispatching&&!r.cancelRequested&&!r.removed);
+    if(!row)break;
+    row.dispatching=true;
+    try{
+     if(row.file&&!row.cancelRequested)await privateUploadOneFilm(row.file,row.uploadKey,row,Boolean(row.allowLegacy));
+     else if(!row.cancelRequested)privateUpdateUploadRow(row,'Archivo no disponible. Selecciona nuevamente el video.',row.percent,'failed');
+    }catch(error){
+     if(!row.cancelRequested)privateUpdateUploadRow(row,'Subida interrumpida: '+String(error?.message||'Error de conexión.'),row.percent,'failed');
+    }finally{
+     row.dispatching=false;row.retrying=false;row.allowLegacy=false;
+    }
    }
   }));
- }catch(e){
-  for(const row of waiting.filter(r=>r.phase==='queued'))privateUpdateUploadRow(row,'No se inició: '+String(e?.message||'Error de conexión.'),0,'failed');
+ }catch(error){
+  for(const row of privateBatchUploads.filter(r=>r.phase==='queued'&&!r.cancelRequested))
+   privateUpdateUploadRow(row,'No se inició: '+String(error?.message||'Error de conexión.'),row.percent,'failed');
  }finally{
   privateBatchRunning=false;
-  const btn=document.querySelector('[data-action="private-upload"]');
-  if(btn)btn.disabled=false;
-  const inp=document.getElementById('private-film-file');
-  if(inp){inp.disabled=false;inp.value='';}
-  privateUploadDrafts=[];
-  const draftNode=document.getElementById('private-upload-drafts');if(draftNode)draftNode.innerHTML='';
   privateRenderUploadBatch(true);
+  if(privateBatchUploads.some(r=>r.phase==='queued'&&!r.cancelRequested&&!r.removed))
+   void privateDrainUploadQueue();
  }
 }
-
+function privateUploadAdmin(){
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ if(!key){toast('Introduce tu código de administración.');return;}
+ privateReadUploadDraftValues();
+ const drafts=privateUploadDrafts.slice();
+ if(!drafts.length){toast('Selecciona una o varias películas.');return;}
+ const invalid=drafts.find(d=>String(d.title||'').trim().length<2||String(d.title||'').trim().length>130||d.year&&!/^(19|20)\d{2}$/.test(String(d.year)));
+ if(invalid){toast('Revisa el título y año de cada película antes de subirla.');return;}
+ const currentlyQueued=new Set(privateBatchUploads.filter(r=>['queued','uploading','finalizing','processing'].includes(r.phase)&&!r.cancelRequested&&!r.removed).map(r=>r.token));
+ const included=new Set();
+ const selected=drafts.filter(d=>{
+  const token=privateFileToken(d.file);
+  if(currentlyQueued.has(token)||included.has(token))return false;
+  included.add(token);return true;
+ });
+ if(!selected.length){toast('Los archivos ya están en la cola o se están subiendo.');return;}
+ const rows=selected.map((d,i)=>({
+  id:String(Date.now())+'-'+i+'-'+Math.random().toString(36).slice(2,6),
+  name:d.file.name,title:String(d.title||'').trim(),year:String(d.year||''),
+  size:d.file.size,file:d.file,token:privateFileToken(d.file),sessionId:'',uploadKey:key,
+  percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
+  phase:/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(d.file.name)&&d.file.size>0&&d.file.size<5*1024*1024*1024?'queued':'failed',
+  detail:'Esperando turno de transferencia'
+ }));
+ for(const row of rows.filter(r=>r.phase==='failed'))row.detail='Formato no admitido o archivo superior a 5 GiB.';
+ privateBatchUploads.push(...rows);
+ // Keep prior transfers; clear only the selection that was just submitted.
+ privateUploadDrafts=[];
+ const picker=document.getElementById('private-film-file');if(picker)picker.value='';
+ const area=document.getElementById('private-upload-drafts');if(area)area.innerHTML='';
+ privateRenderUploadBatch(true);
+ const queued=rows.filter(r=>r.phase==='queued');
+ if(!queued.length){toast('No se seleccionaron archivos válidos.');return;}
+ toast(queued.length+' película(s) en cola. Puedes elegir más archivos sin detener las subidas anteriores.');
+ void privateDrainUploadQueue();
+}
 
 const NEVIX_REMUX_JOB_KEY='nevix-r2-remux-active-job';
 async function privateRemuxR2Admin(){
