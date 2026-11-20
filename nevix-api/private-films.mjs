@@ -1,6 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createPrivateRemux } from './private-remux-r2.mjs';
+import { createPrivateDubbing } from './private-dubbing.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -196,6 +197,9 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   void checkPlayback();
  }
  remux=configured?createPrivateRemux({client,bucket,finalize:publishRepaired,finishWithoutRemux:publishValidated,onFailure:markValidationFailed}):null;
+ const dubbing=configured?createPrivateDubbing({client,bucket,admin,family,origin,
+   findFilm:async id=>(await sync()).find(x=>x.id===id&&x.status==='ready'&&OUTPUT_MP4.test(x.key))||null,
+   reply:(res,status,data)=>send(res,status,data),baseUrl:'https://nevix-catalog-api.onrender.com'}):null;
  async function autoValidateUploadedMovie(key){
   const rows=await sync(true),entry=rows.find(x=>x.key===key);
   if(!entry)throw Error('No se encontró el archivo MP4 recién subido.');
@@ -239,6 +243,19 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround'});
    }
    if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY en Render.'});
+   if(url.pathname==='/api/private/dub-source'||url.pathname==='/api/private/dub-audio'){
+    await dubbing.serve(req,res,url);return;
+   }
+   if(url.pathname==='/api/private/dubbing/status'){
+    if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
+    if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied'});
+    return reply(res,200,await dubbing.status(string(url.searchParams.get('id'))));
+   }
+   if(url.pathname==='/api/private/dubbing/start'){
+    if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
+    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied'});
+    return reply(res,202,await dubbing.start(await body(req)));
+   }
    if(url.pathname==='/api/private/video'){
     if(req.method!=='GET'&&req.method!=='HEAD')return reply(res,405,{error:'method_not_allowed'});
     const id=string(url.searchParams.get('id')),expiration=string(url.searchParams.get('expires'));

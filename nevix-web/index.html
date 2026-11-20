@@ -385,10 +385,14 @@ footer{color:#a88d94;border-color:#48121f}
 .nevix-netflix-toggle input:disabled{cursor:wait}
 .nevix-netflix-track{width:64px;height:36px;display:block;border:1px solid #76565f;border-radius:40px;background:#4b3d43;box-shadow:inset 0 2px 5px #0008}
 .nevix-netflix-track:before{content:'';position:absolute;top:6px;left:6px;width:25px;height:25px;background:#fff;border-radius:50%;box-shadow:0 2px 5px #0007;transition:transform .2s}
-.nevix-netflix-toggle input:checked+.nevix-netflix-track{background:#ee2448;border-color:#f56c7e}
+.nevix-netflix-toggle input:checked+.nevix-netflix-track{background:#168a46;border-color:#43db86}
 .nevix-netflix-toggle input:checked+.nevix-netflix-track:before{transform:translateX(28px)}
 .nevix-netflix-toggle input:focus-visible+.nevix-netflix-track{outline:3px solid #7bdcff;outline-offset:3px}
 .nevix-netflix-toggle input:disabled+.nevix-netflix-track{opacity:.5}
+.nevix-film-language{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 15px;background:#101822;color:#e3f0fc;font-size:13px}
+.nevix-film-language label{font-weight:800}
+.nevix-film-language select{color:#fff;background:#172a26;border:1px solid #47896a;border-radius:9px;padding:8px;font-weight:700;max-width:100%}
+.nevix-film-language span{font-size:12px;color:#b2c2d3}
 </style>
 </head>
 <body>
@@ -2062,6 +2066,7 @@ function privateAdminSection(){
  +'<p class="hint">Cada video se revisa automáticamente. NÉVIX conserva el original en R2 y publica un MP4 H.264/AAC compatible: copia sin modificar el video si es posible, o convierte lo necesario. Para AC3/DTS 5.1 prepara audio estéreo y AAC 5.1. Las conversiones grandes dependen de los recursos de Render.</p>'
  +'<p id="private-remux-status" class="hint" role="status" aria-live="polite"></p>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-library">🎞 Gestionar títulos, portadas y películas</button></div>'
+ +'<p class="hint">Doblaje español con IA: selecciona una película en la lista de R2 y autoriza el uso de créditos de ElevenLabs. También funciona para películas ya subidas; nunca elimina ni modifica los MP4 originales. Se requiere ELEVENLABS_API_KEY configurada en Render y derechos sobre el contenido.</p>'
  +'<div id="private-library-list" style="margin-top:12px" aria-live="polite"></div>'
  +'<div id="private-pending-review" style="margin-top:12px"></div>'
  +'<p id="private-upload-status" class="hint" role="status" aria-live="polite">Selecciona varias películas: NÉVIX transfiere 2 simultáneamente, deja las demás en cola y las prepara después. Mantén esta pestaña abierta durante las subidas.</p>'
@@ -2124,6 +2129,7 @@ async function privateManageR2(){
      return '<div class="source-row" style="gap:10px;align-items:center;margin:8px 0"><span style="min-width:0;flex:1"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span>'
        +'<div class="actions" style="flex-shrink:0;flex-wrap:wrap;gap:6px">'
        +(it.status==='ready'||it.status==='review'?'<button class="btn btn-sm" type="button" data-action="private-r2-edit" data-id="'+id+'">✎ Editar título y portada</button>':'')
+       +(it.status==='ready'?'<button class="btn btn-sm" type="button" data-action="private-dubbing-start" data-id="'+id+'">🌐 Crear doblaje español (IA)</button>':'')
        +'<button class="btn btn-danger btn-sm" type="button" data-action="private-r2-delete" data-id="'+id+'" '+(it.status==='processing'||job?'disabled title="Espera a que termine la preparación"':'')+'>Eliminar</button></div></div>';
    }).join('');
  }catch(error){area.textContent='No se pudo consultar Cloudflare R2: '+String(error?.message||'Error.');}
@@ -2717,6 +2723,7 @@ function unmuteYoutube(){
 let currentLiveEngine=null;
 
 let privateMediaSession=null;
+let privateAudioContext=null;
 
 // Android's HTML5 <video src> does not reliably start some fragmented MP4s.
 // MSE receives the same signed, private HTTP Range stream, retaining the
@@ -2973,6 +2980,7 @@ function disposePlayer(){
  if(youtubePlayer){try{youtubePlayer.destroy();}catch(_){}youtubePlayer=null;}
  if(currentLiveEngine){currentLiveEngine.cancel();currentLiveEngine=null;}
  if(privateMediaSession){privateMediaSession.cancel();privateMediaSession=null;}
+ if(privateAudioContext){try{privateAudioContext.audio.pause();}catch(_){}privateAudioContext=null;}
  if(state.hls){state.hls.destroy();state.hls=null;}
  let video=$('#nevix-player');
  if(video){try{video.pause();video.removeAttribute('src');video.load();}catch(_){}}
@@ -3011,9 +3019,10 @@ function play(id,sourceIndex=0){
  if(!validStreamUrl(url,{localDemo:it.sample}))return toast('La dirección de este video no es válida.');
  closeDetail();disposePlayer();state.playing=it.id;
  const isHLS=/\.m3u8(?:[?#]|$)/i.test(url);
- els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><video id="nevix-player" class="player-video" controls controlsList="nofullscreen" autoplay playsinline></video><div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}${it.featuredVenezuela?'<button class="btn btn-sm" data-action="unmute-player" id="player-unmute" hidden>🔊 Activar sonido</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
+ els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor NÉVIX TV"><div class="player-top"><b>▶ ${esc(displayTitle(it))}${it.kind==='series'?` — ${esc(it.title)}`:''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><video id="nevix-player" class="player-video" controls controlsList="nofullscreen" autoplay playsinline></video>${it.privateMovie?'<div class="nevix-film-language"><label for="nevix-film-language">🔊 Idioma de audio</label> <select id="nevix-film-language" aria-label="Idioma de audio"><option value="original">Original (idioma del archivo)</option><option value="es" disabled>Español latino (aún no disponible)</option></select><span id="nevix-film-language-state" aria-live="polite">Comprobando pistas de audio...</span><audio id="nevix-film-spanish-audio" preload="none" hidden></audio></div>':''}<div class="player-status" id="player-status">${it.featuredVenezuela?`Intentando señal pública ${sourceIndex+1} de ${sourceOptions.length}…`:"Preparando reproducción gratuita…"}</div>${it.unverified?'<div class="nevix-engine-note">◌ <strong>Señal sin verificar:</strong> que el canal sea gratuito no significa que permita reproducirse dentro de otras aplicaciones.</div>':''}${it.openLicense?`<div class="player-credit">Obra abierta · ${esc(it.source)} · <a href="https://studio.blender.org/films/" target="_blank" rel="noopener noreferrer">Licencia / autoría ↗</a></div>`:''}<div id="player-details" class="player-diagnostics" hidden></div><div class="player-tools"><button class="btn btn-sm" data-action="retry-stream" data-id="${esc(it.id)}">↻ Reintentar</button>${isHLS?'<button class="btn btn-sm" data-action="switch-stream-engine">⇄ Cambiar motor</button>':''}${it.featuredVenezuela?'<button class="btn btn-sm" data-action="unmute-player" id="player-unmute" hidden>🔊 Activar sonido</button>':''}<button class="btn btn-sm" data-action="test-hls">🧪 Probar HLS</button><button class="btn btn-sm" data-action="show-player-diagnostics">ℹ Diagnóstico</button></div>${it.direct&&it.website?`<div class="stream-fallback"><span>Si el emisor bloquea la reproducción en aplicaciones externas, solo se puede ver donde lo autorice.</span> <a class="btn btn-sm" href="${esc(it.website)}" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a></div>`:''}</div></div>`;
  const video=$('#nevix-player'),status=$('#player-status'),details=$('#player-details');
  if(it.privateMovie&&status)status.textContent='Abriendo película privada desde Cloudflare R2…';
+ if(it.privateMovie)void preparePrivateAudio(it,video);
  if(it.privateMovie&&status)status.classList.add('nevix-private-status');
  const openPrivateFallback=()=>{
   if(!it.privateMovie||it.privateProxyActive||!it.privateFallbackUrl)return false;
@@ -3157,6 +3166,86 @@ function tryAutoPlay(video){
   if(st)st.textContent='No se pudo comenzar automáticamente esta señal. Comprueba las fuentes del canal.';
  });
 }
+
+function setPrivateAudio(mode,remember=false){
+ const ctx=privateAudioContext;
+ if(!ctx||state.playing!==ctx.id)return;
+ const {audio,video,select,label}=ctx;
+ if(mode!=='es'||!ctx.url){
+  ctx.mode='original';audio.pause();video.muted=false;
+  if(select)select.value='original';
+  if(label)label.textContent=ctx.url?'Audio original seleccionado.':'Audio original: español aún no disponible.';
+  if(remember)try{localStorage.setItem('nevix-preferred-audio','original');}catch(_){}
+  return;
+ }
+ ctx.mode='es';
+ video.muted=true;
+ if(audio.src!==ctx.url){audio.src=ctx.url;audio.load();}
+ audio.playbackRate=video.playbackRate||1;
+ try{if(Number.isFinite(video.currentTime))audio.currentTime=video.currentTime;}catch(_){}
+ if(select)select.value='es';
+ if(label)label.textContent='Español latino (doblaje con IA).';
+ if(remember)try{localStorage.setItem('nevix-preferred-audio','es');}catch(_){}
+ if(!video.paused){
+  const p=audio.play();
+  if(p?.catch)p.catch(()=>{if(privateAudioContext===ctx){setPrivateAudio('original');if(label)label.textContent='Pulsa Español latino otra vez para activar el audio.';}});
+ }
+}
+async function preparePrivateAudio(item,video){
+ const audio=document.getElementById('nevix-film-spanish-audio');
+ const select=document.getElementById('nevix-film-language');
+ const label=document.getElementById('nevix-film-language-state');
+ if(!audio||!select||!label)return;
+ const ctx={id:item.id,audio,video,select,label,url:'',mode:'original'};
+ privateAudioContext=ctx;
+ function syncPosition(force=false){
+  if(privateAudioContext!==ctx||ctx.mode!=='es')return;
+  if(!Number.isFinite(video.currentTime))return;
+  try{if(force||Math.abs((audio.currentTime||0)-video.currentTime)>0.75)audio.currentTime=video.currentTime;}catch(_){}
+ }
+ video.addEventListener('playing',()=>{
+  if(privateAudioContext!==ctx||ctx.mode!=='es')return;
+  syncPosition(true);const promise=audio.play();
+  if(promise?.catch)promise.catch(()=>{if(privateAudioContext===ctx)setPrivateAudio('original');});
+ });
+ video.addEventListener('pause',()=>{if(privateAudioContext===ctx)audio.pause();});
+ video.addEventListener('seeking',()=>syncPosition(true));
+ video.addEventListener('seeked',()=>syncPosition(true));
+ video.addEventListener('timeupdate',()=>syncPosition());
+ video.addEventListener('ratechange',()=>{if(privateAudioContext===ctx)audio.playbackRate=video.playbackRate||1;});
+ video.addEventListener('ended',()=>audio.pause());
+ audio.addEventListener('error',()=>{if(privateAudioContext===ctx){setPrivateAudio('original');label.textContent='No se pudo reproducir el audio español en este dispositivo.';}});
+ try{
+  const data=await privateRequest('/api/private/dubbing/status?id='+encodeURIComponent(item.id),privateFamilyCode);
+  if(privateAudioContext!==ctx)return;
+  const supported=Boolean(audio.canPlayType('audio/flac')||audio.canPlayType('audio/x-flac'));
+  if(data.available&&typeof data.audioUrl==='string'&&/^https:\/\//.test(data.audioUrl)&&supported){
+   ctx.url=data.audioUrl;
+   select.querySelector('option[value="es"]').disabled=false;
+   select.querySelector('option[value="es"]').textContent='Español latino (IA)';
+   label.textContent='Audio español disponible; puedes cambiar durante la reproducción.';
+   let preference='es';try{preference=localStorage.getItem('nevix-preferred-audio')||'es';}catch(_){}
+   if(preference==='es')setPrivateAudio('es');
+  }else{
+   label.textContent=data.state==='queued'||data.state==='preparing'||data.state==='processing'||data.state==='storing'?
+    'El doblaje español se está preparando. Por ahora se escucha el audio original.':
+    data.available&&!supported?'Este navegador no admite el formato del audio español.':
+    'El doblaje español todavía no está disponible para esta película.';
+  }
+ }catch(_){if(privateAudioContext===ctx)label.textContent='No se pudo consultar el idioma español. Continúa disponible el audio original.';}
+}
+async function requestPrivateDubbing(id){
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ if(!key)return toast('Introduce el código de administración antes de solicitar el doblaje.');
+ if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
+ if(!confirm('¿Confirmas que tienes autorización para doblar esta película y compartir el archivo con ElevenLabs?'))return;
+ if(!confirm('ElevenLabs puede cobrar créditos según la duración. ¿Autorizas iniciar el doblaje de esta película?'))return;
+ try{
+  const result=await privateRequest('/api/private/dubbing/start',key,true,'POST',{id,rightsConfirmed:true,paidConfirmed:true});
+  toast(result.alreadyRequested?'El doblaje de esta película ya había sido solicitado.':'Solicitud de doblaje enviada a ElevenLabs.');
+ }catch(e){toast('No se pudo iniciar el doblaje: '+String(e.message||'Error.'));}
+}
+
 function closePlayer(){const it=itemById(state.playing);const video=$('#nevix-player');if(it&&video&&it.kind!=='live'&&Number.isFinite(video.duration)&&video.duration){state.progress[it.id]={time:Math.floor(video.currentTime),duration:Math.floor(video.duration)};store();}disposePlayer();render();}
 function toggleFavorite(id){if(!itemById(id))return;const n=state.favorites.indexOf(id);if(n>=0)state.favorites.splice(n,1);else state.favorites.push(id);store();if(state.selected){openDetail(state.selected);}else render();toast(n>=0?'Quitado de Mi lista':'Añadido a Mi lista');}
 function deleteItem(id){const it=itemById(id);if(!it||!confirm(`¿Eliminar "${it.title}" de tu catálogo? No borrará el video original.`))return;state.items=state.items.filter(x=>x.id!==id);state.sessionItems=state.sessionItems.filter(x=>x.id!==id);state.favorites=state.favorites.filter(x=>x!==id);delete state.progress[id];store();render();toast('Contenido eliminado.');}
@@ -3178,10 +3267,10 @@ function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perd
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
  switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
-  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
-document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
+document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
 document.addEventListener('input',e=>{if(e.target.id==='live-search'){const pos=e.target.selectionStart;state.liveQuery=e.target.value;state.liveShown=100;render();const inp=$('#live-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='movie-search'){const pos=e.target.selectionStart;state.movieQuery=e.target.value;render();const inp=$('#movie-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='series-search'){const pos=e.target.selectionStart;state.seriesQuery=e.target.value;render();const inp=$('#series-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='global-search'){const pos=e.target.selectionStart;state.search=e.target.value;const grid=$('#main .tile-grid');const result=chooseItems(allItems(),{q:state.search});const heading=$('#main .section-head h2');if(heading)heading.textContent=state.search?`${result.length} resultado(s)`:'Todo el contenido';if(grid)grid.innerHTML=seriesOnce(result.filter(x=>x.kind==='series')).concat(result.filter(x=>x.kind!=='series')).map(x=>card(x,true)).join('');else if(result.length){render({focusSearch:true});const inp=$('#global-search');inp?.setSelectionRange(pos,pos);}}});
 document.addEventListener('keydown',e=>{if((e.key==='Escape'||e.key==='Backspace')&&document.querySelector('.cinema-preview.nevix-preview-expanded')){e.preventDefault();document.querySelector('.cinema-preview.nevix-preview-expanded')?.classList.remove('nevix-preview-expanded');document.documentElement.classList.remove('nevix-theater-lock');document.body.classList.remove('nevix-theater-lock');return;}if(e.key==='Escape'||e.key==='Backspace'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){if(els.player.innerHTML){const s=document.querySelector('#player-root .player-shell');if(s&&(s.classList.contains('nevix-expanded')||document.fullscreenElement===s||document.webkitFullscreenElement===s)){e.preventDefault();exitPlayerFullscreen();return;}closePlayer();return;}if(els.modal.innerHTML){closeDetail();return;}$('#sidebar').classList.remove('open');}if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key) && !['INPUT','TEXTAREA','SELECT','VIDEO'].includes(document.activeElement?.tagName)&&!els.player.innerHTML){const focusables=[...document.querySelectorAll('button:not(:disabled),a[href]')].filter(el=>el.getBoundingClientRect().width>0);if(focusables.length){let i=focusables.indexOf(document.activeElement);if(i<0)return;let step=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;let next=focusables[(i+step+focusables.length)%focusables.length];if(next){e.preventDefault();next.focus({preventScroll:false});}}}});
 window.addEventListener('hashchange',()=>{const requested=location.hash.slice(1);if(requested==='netflix'||requested==='free'){go('movie');return;}if(NAMES[requested]&&requested!==state.view){state.view=requested;state.category='Todos';state.search='';render();if(requested==='movie'&&!state.movieAttempted)void loadWatchmodeCatalog();if(requested==='series'&&!state.seriesAttempted)void loadWatchmodeSeries();}});
