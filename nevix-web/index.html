@@ -1576,7 +1576,7 @@ async function loadCountry(code,force=false){
  if(activeCountryLoad){activeCountryLoad.controller.abort();activeCountryLoad=null;}
  state.loadingCountry=null;
  state.loadProgress='';
- const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&x.browserPlayable===true);
+ const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&(/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))));
  const recentEmpty=!force&&Date.now()-(countryRetryAt[code]||0)<90000;
  if(cached||recentEmpty){render();return;}
  if(force)state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));
@@ -1608,6 +1608,13 @@ async function loadCountry(code,force=false){
   if(!active())return;
   const candidates=parseCountryPlaylist(playlist,country).concat(veExperimentalCandidates(country));
   const playable=[],checkedPublicNames=new Set();
+  // Preserve discovered free-to-air channels immediately. Mobile HLS probes
+  // can fail from CORS or autoplay restrictions even when a stream exists.
+  // Verified channels are upgraded after a playback probe succeeds.
+  const visibleCandidates=candidates.filter(x=>!state.failedStreams.includes(x.id));
+  state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code||!/^(Nexonic|Lista pública experimental)/.test(String(x.source||'')))
+    .concat(visibleCandidates.map(x=>({...x,browserPlayable:false,verifiedPlayback:false,testedAt:0})));
+  if(state.view==='live'&&state.category===countryName)render();
   for(let i=0;i<candidates.length;i+=4){
    if(!active())return;
    const results=await Promise.all(candidates.slice(i,i+4).map(async item=>({item,ok:await checkBrowserStream(item,controller.signal)})));
@@ -1620,8 +1627,10 @@ async function loadCountry(code,force=false){
     }
     playable.push({...result.item,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:Date.now()});
    }
-   // Las señales válidas aparecen por lotes; las fallidas no bloquean la interfaz.
-   state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code||!/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).concat(playable);
+   // Upgrade previously discovered candidates, never discard the rest
+   // simply because an embedded player cannot pass an automatic probe.
+   const verifiedById=new Map(playable.map(x=>[x.id,x]));
+   state.worldChannels=state.worldChannels.map(x=>verifiedById.get(x.id)||x);
    if(state.view==='live'&&state.category===countryName)render();
   }
   if(!active())return;
@@ -1629,7 +1638,7 @@ async function loadCountry(code,force=false){
   countryRetryAt[code]=Date.now();
   store();
   if(state.view==='live'&&state.category===countryName)render();
-  if(!playable.length)toast('Por ahora no hay emisiones compatibles de '+country[2]+'. Puedes usar los accesos oficiales.');
+  if(!playable.length&&!visibleCandidates.length)toast('La lista de '+country[2]+' no contiene canales HLS compatibles; revisa los accesos oficiales.');
  }catch(err){
   if(active()){
    countryRetryAt[code]=Date.now();
@@ -1670,7 +1679,7 @@ function saveCatalogSnapshot(){try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.s
 function movieCatalogItems(){const seen=new Set();return [...privateMovies,...state.movieRecentItems,...state.moviePopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function seriesCatalogItems(){const seen=new Set();return [...state.seriesRecentItems,...state.seriesPopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function isRetiredStarterTitle(it){return (it?.kind==='movie'||it?.kind==='series')&&(it?.openLicense===true||it?.free===true||it?.sample===true||String(it?.id||'').startsWith('open-')||String(it?.id||'').startsWith('demo-')||String(it?.id||'').startsWith('official-vod-'));}
-function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>x.browserPlayable===true&&!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>!isRetiredStarterTitle(x))];}
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
 function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
@@ -1929,14 +1938,16 @@ function renderCountryOfficialAccess(country){
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
- const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>(it.browserPlayable===true||it.embedType==='youtube')&&!it.featuredVenezuela&&!isRemovedVeChannel(it));
+ const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>
+  (it.browserPlayable===true||it.embedType==='youtube'||/^(Nexonic|Lista pública experimental)/.test(String(it.source||''))||it.source==='manual'||/M3U importada/i.test(String(it.source||'')))
+  &&!it.featuredVenezuela&&!isRemovedVeChannel(it)&&!state.failedStreams.includes(it.id));
  const featured=chosen?.[0]==='ve'?chooseItems(venezuelaFeaturedCards(),{category:state.category,q:state.liveQuery}):[];
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
  const selectedName=chosen?' · '+chosen[1]+' '+chosen[2]:'';
  return pageTitle('TV en vivo',chosen?'Canales gratuitos de '+chosen[2]:'Explora televisión gratuita por país')
  +'<div class="live-control-panel"><div class="live-control-title">📺 TELEVISIÓN GRATIS</div>'
- +'<p>Selecciona un país. Las emisiones que se puedan reproducir aparecerán automáticamente, sin interrumpir la navegación.</p>'
+ +'<p>Selecciona un país para ver sus canales gratuitos. Puedes probar cada señal dentro de NÉVIX; las restricciones del emisor o del navegador pueden impedir reproducir algunas.</p>'
  +'<div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">'+options+'</select></label>'
  +'<button class="btn btn-primary" data-action="load-country">'+(state.loadingCountry?'⌛ Preparando canales…':'↻ Actualizar canales')+'</button>'
  +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países consultados</button></div>'
