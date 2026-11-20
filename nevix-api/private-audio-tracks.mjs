@@ -112,7 +112,7 @@ export function createPrivateAudioTracks({client,bucket,admin,family,origin,find
   const film=await findFilm(id);
   if(!film)return {state:'not_found',tracks:[]};
   const persisted=await read(id);
-  if(!persisted||persisted.sourceKey!==(film.backupKey||film.key))return {state:'not_scanned',tracks:[],sourceAvailable:true};
+  if(!persisted||![film.key,film.backupKey].includes(persisted.sourceKey))return {state:'not_scanned',tracks:[],sourceAvailable:true};
   const job=jobs.get(id);
   const state=job&&!['completed','failed'].includes(job.state)?job.state:persisted.state==='processing'?'interrupted':persisted.state;
   if(state!=='ready')return {state:state||'not_scanned',percent:job?.percent||0,message:job?.message||persisted.message||'',tracks:[]};
@@ -209,7 +209,7 @@ export function createPrivateAudioTracks({client,bucket,admin,family,origin,find
     return reply(res,403,{error:'audio_token_expired'});
   const film=await findFilm(id);
   const data=await read(id);
-  if(!film||data?.state!=='ready'||data.sourceKey!==(film.backupKey||film.key)||!data.tracks?.some(x=>x.index===index&&x.ready))
+  if(!film||data?.state!=='ready'||![film.key,film.backupKey].includes(data.sourceKey)||!data.tracks?.some(x=>x.index===index&&x.ready))
     return reply(res,404,{error:'audio_unavailable'});
   const key=fileKey(id,index),range=txt(req.headers.range);
   if(range&&(!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)||range.length>70))return reply(res,416,{error:'invalid_range'});
