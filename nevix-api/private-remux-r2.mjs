@@ -136,25 +136,31 @@ function conversionPlan(before,filename,layout){
   sourceDefault:Number(x.disposition?.default)===1
  }));
  const hasAudio=Boolean(audioTracks.length);
+ const outputAudioTracks=audioTracks.flatMap(track=>track.channels>=6?
+   [{...track,profile:'stereo'},{...track,profile:'surround'}]:[{...track,profile:'stereo'}]);
  const incompatible=audioTracks.some(x=>x.codec!=='aac'||x.channels>2||x.channels<1);
  const changeDefault=Boolean(preferred&&sounds[0]&&preferred.index!==sounds[0].index);
  const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||incompatible||changeDefault;
- return {videoCopy,hasAudio,needsConversion,audioTracks,videoIndex:video.index,
+ return {videoCopy,hasAudio,needsConversion,audioTracks,outputAudioTracks,videoIndex:video.index,
   sourceVideo:video.codec_name,sourceAudio:audioTracks[0]?.codec||'sin audio',sourceChannels:audioTracks[0]?.channels||0};
 }
 async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
  const args=['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-threads','1','-i',input,
   '-map','0:'+plan.videoIndex];
 
- for(const track of plan.audioTracks)args.push('-map','0:'+track.index);
+
+ for(const track of plan.outputAudioTracks)args.push('-map','0:'+track.index);
  if(plan.videoCopy)args.push('-c:v:0','copy');
  else args.push('-c:v:0','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-threads:v:0','1');
- for(let i=0;i<plan.audioTracks.length;i++){
-  const track=plan.audioTracks[i];
-  if(track.codec==='aac'&&track.channels>0&&track.channels<=2)args.push('-c:a:'+i,'copy');
+ for(let i=0;i<plan.outputAudioTracks.length;i++){
+  const track=plan.outputAudioTracks[i];
+  if(track.profile==='surround'){
+   if(track.codec==='aac'&&track.channels===6)args.push('-c:a:'+i,'copy');
+   else args.push('-c:a:'+i,'aac','-ac:a:'+i,'6','-b:a:'+i,'384k');
+  }else if(track.codec==='aac'&&track.channels>0&&track.channels<=2)args.push('-c:a:'+i,'copy');
   else args.push('-c:a:'+i,'aac','-ac:a:'+i,'2','-b:a:'+i,'192k');
   args.push('-metadata:s:a:'+i,'language='+track.language,
-   '-metadata:s:a:'+i,'title='+(track.title||('Audio '+(i+1))),
+   '-metadata:s:a:'+i,'title='+(track.title||('Audio '+(i+1)))+(track.profile==='surround'?' · 5.1':''),
    '-disposition:a:'+i,(i===0?'default':'0'));
  }
  args.push('-max_muxing_queue_size','2048','-movflags','+faststart','-f','mp4',output);
@@ -189,11 +195,16 @@ function validateMedia(before,after,plan){
  if(!originalVideo||!outputVideo||outputVideo.codec_name!=='h264'||!['yuv420p','yuvj420p'].includes(String(outputVideo.pix_fmt||'').toLowerCase()))return false;
  if(originalVideo.width!==outputVideo.width||originalVideo.height!==outputVideo.height)return false;
 
+
  const audio=(after.streams||[]).filter(x=>x.codec_type==='audio');
- if(audio.length!==plan.audioTracks.length)return false;
- for(let i=0;i<plan.audioTracks.length;i++){
-  if(audio[i].codec_name!=='aac'||Number(audio[i].channels)>2||Number(audio[i].channels)<1)return false;
-  if(plan.audioTracks[i].language!=='und'&&languageOf(audio[i])!==plan.audioTracks[i].language)return false;
+ if(audio.length!==plan.outputAudioTracks.length)return false;
+ for(let i=0;i<plan.outputAudioTracks.length;i++){
+  const expected=plan.outputAudioTracks[i],actual=audio[i];
+  if(actual.codec_name!=='aac')return false;
+  const channels=Number(actual.channels);
+  if(expected.profile==='surround'&&channels!==6)return false;
+  if(expected.profile!=='surround'&&(channels<1||channels>2))return false;
+  if(expected.language!=='und'&&languageOf(actual)!==expected.language)return false;
  }
  const beforeSeconds=movieDuration(before),afterSeconds=movieDuration(after);
  if(!Number.isFinite(afterSeconds)||afterSeconds<=2)return false;
@@ -291,7 +302,7 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
     }
     lastPhase='remuxing';job.phase='remuxing';job.percent=1;
     job.message=plan.videoCopy?'Preparando MP4 compatible sin modificar el video. Ajustando audio cuando sea necesario.':'Convirtiendo video '+plan.sourceVideo+' a H.264 compatible. Puede requerir bastante procesamiento.';
-    console.log('NÉVIX video conversion: phase=ffmpeg auto='+auto+' video_copy='+plan.videoCopy+' audio='+plan.sourceAudio+' tracks='+plan.audioTracks.length);
+    console.log('NÉVIX video conversion: phase=ffmpeg auto='+auto+' video_copy='+plan.videoCopy+' audio='+plan.sourceAudio+' tracks='+plan.audioTracks.length+' surround='+plan.outputAudioTracks.filter(x=>x.profile==='surround').length);
     await ffmpegConvert(input,output,plan,pct=>{job.percent=Math.max(job.percent,pct);},duration);
     const after=await probe(output);
     if(!validateMedia(before,after,plan))throw Error('La versión preparada no pasó la verificación de video, audio y duración.');
