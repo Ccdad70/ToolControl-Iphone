@@ -237,6 +237,18 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   if(!configured||!uploadReady)return;
   const rows=await sync(true);
   for(const entry of rows.filter(x=>x.status==='processing')){
+   // A specific legacy 902-MiB MKV was deliberately stopped at the user's
+   // request to replace it with a browser-compatible H.264/AAC MP4.
+   // Preserve the R2 original and any already published movies; do not
+   // repeatedly restart its costly MPEG-4 to H.264 conversion after deploys.
+   const legacyReset=/\.mkv$/i.test(String(entry.key||''))
+    &&Math.round(Number(entry.size||0)/1048576)===902
+    &&String(entry.title||'').trim().toLocaleLowerCase('es').includes('película pendiente');
+   if(legacyReset){
+    await markValidationFailed(entry,'Conversión detenida a petición del administrador. El archivo MKV original sigue guardado; sube la nueva versión MP4 H.264/AAC.');
+    console.log('NÉVIX requested reset: stalled legacy MKV conversion stopped; original retained in R2');
+    continue;
+   }
    const started=remux.start(entry,{auto:true});
    if(started.error)await markValidationFailed(entry,started.error);
    else console.log('NÉVIX automatic MP4 job restarted after server deploy');
