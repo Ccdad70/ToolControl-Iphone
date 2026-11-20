@@ -258,6 +258,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/audio/scan'){
     if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied'});
+    if(uploads?.activeCount()>0)return reply(res,409,{error:'uploads_in_progress',message:'Hay películas subiendo en este momento. Termina las transferencias antes de analizar idiomas para no ralentizarlas.'});
     const arg=await body(req);
     if(!/^priv-[a-f0-9]{24}$/.test(string(arg.id)))return reply(res,400,{error:'invalid_movie'});
     const entry=(await sync()).find(x=>x.id===arg.id&&x.status==='ready'&&OUTPUT_MP4.test(x.key));
