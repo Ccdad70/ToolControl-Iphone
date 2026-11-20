@@ -2020,7 +2020,11 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
    const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(timeout),...(payload?{body:JSON.stringify(payload)}:{})});
    let result={};
    try{result=await response.json();}catch(_){}
-   if(!response.ok)throw new Error(result.message||((response.status===401||response.status===403)?'Código de acceso incorrecto o sin permisos.':'El servidor privado respondió con HTTP '+response.status+'.'));
+   if(!response.ok){
+    const error=new Error(result.message||((response.status===401||response.status===403)?'Código de acceso incorrecto o sin permisos.':'El servidor privado respondió con HTTP '+response.status+'.'));
+    error.status=response.status;error.code=String(result.error||'');
+    throw error;
+   }
    return result;
   }catch(error){
    const networkError=['TypeError','TimeoutError','AbortError'].includes(String(error?.name||''));
@@ -2507,7 +2511,12 @@ async function privateSendMp4Part({sessionId,part,piece,key,onProgress,row}){
    if(row?.cancelRequested)return reject(Error('Subida cancelada por administración.'));
    if(xhr.status>=200&&xhr.status<300&&result.ok&&Number(result.part)===part)return resolve(result);
    const error=Error(result.message||'El servidor rechazó el bloque '+part+' (HTTP '+xhr.status+').');
-   error.permanent=[400,401,403,404,409,413,422].includes(xhr.status);
+   error.status=xhr.status;
+   error.code=String(result.error||'');
+   // A busy part may still be finishing after the browser lost the connection.
+   // Do not treat R2 part_busy (409) as a permanent failure.
+   error.permanent=[400,401,403,404,413,422].includes(xhr.status)
+    ||(xhr.status===409&&error.code!=='part_busy');
    reject(error);
   };
   xhr.onerror=()=>{release();reject(Error('Falló la conexión al enviar el bloque '+part+'. Comprueba Wi-Fi o datos móviles.'));};
@@ -2682,13 +2691,48 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
      if(progress.year)row.year=progress.year;
      received=new Set((progress.receivedParts||[]).map(Number).filter(Number.isSafeInteger));
      privateUpdateUploadRow(row,'Se recuperaron '+received.size+' bloques de esta subida.',Math.min(99,Math.floor(received.size*Number(upload.chunkSize)/file.size*100)),'uploading');
-    }else{privateClearUpload(file);toast('La sesión anterior ya no está disponible. Esta película se subirá desde cero.');}
-   }catch(_){privateClearUpload(file);toast('No se pudo continuar la sesión anterior. Se intentará una subida nueva desde cero.');}
+    }else{
+     if(progress?.uploadId===previous.id&&Number(progress.size)===file.size){
+      // The object name may be sanitized by the backend; size and exact
+      // stored session token are sufficient to resume the same file.
+      upload={uploadId:progress.uploadId,chunkSize:progress.chunkSize,chunks:progress.chunks};
+      if(progress.title)row.title=progress.title;
+      if(progress.year)row.year=progress.year;
+      received=new Set((progress.receivedParts||[]).map(Number).filter(Number.isSafeInteger));
+      privateUpdateUploadRow(row,'Recuperados '+received.size+' bloques confirmados en Cloudflare R2.',Math.min(99,Math.floor(received.size*Number(upload.chunkSize)/file.size*100)),'uploading');
+     }else{
+      privateClearUpload(file);
+      privateUpdateUploadRow(row,'La sesión anterior no coincide con el archivo. Se iniciará desde cero.',0,'uploading');
+     }
+    }
+   }catch(error){
+    if(error?.status===401||error?.status===403)throw error;
+    if(error?.status===404){
+     privateClearUpload(file);
+     privateUpdateUploadRow(row,'La sesión anterior fue cancelada o caducó en R2. El archivo se reiniciará desde 0 % porque esos bloques ya no existen.',0,'uploading');
+    }else{
+     // A temporary failure checking progress is not proof that the
+     // multipart session has disappeared. Keep the session for retry.
+     throw new Error('No se pudo consultar el progreso guardado en R2. Reintenta Continuar subida cuando vuelva la conexión. '+String(error?.message||''));
+    }
+   }
   }
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
   if(!upload){
    privateUpdateUploadRow(row,'Iniciando una nueva subida desde cero…',0,'uploading');
-   upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||''});
+   // An older upload may still be occupying an R2 slot. 429 is temporary:
+   // wait for a free slot instead of marking the movie interrupted at 0%.
+   for(let attempt=1;attempt<=12;attempt++){
+    if(row.cancelRequested)throw Error('Cancelación solicitada.');
+    try{
+     upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||''});
+     break;
+    }catch(error){
+     if(error?.status!==429||attempt===12)throw error;
+     privateUpdateUploadRow(row,'Esperando un espacio de subida disponible en R2 ('+attempt+'/12). No se ha perdido ningún archivo.',0,'uploading');
+     await new Promise(resolve=>setTimeout(resolve,Math.min(15000,2500*attempt)));
+    }
+   }
   }
   sessionId=String(upload.uploadId||'');row.sessionId=sessionId;row.waitingStart=false;
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
@@ -2701,16 +2745,37 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
    const from=(part-1)*size,to=Math.min(file.size,from+size);
    if(received.has(part)){confirmed+=to-from;privateUpdateUploadRow(row,'Retomando bloques existentes…',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');continue;}
    let delivered=false,error=null;
-   for(let attempt=1;attempt<=5&&!delivered;attempt++){
+   for(let attempt=1;attempt<=8&&!delivered;attempt++){
     if(row.cancelRequested)throw Error('Cancelación solicitada.');
-    privateUpdateUploadRow(row,'Bloque '+part+' de '+total+' · intento '+attempt+'/5',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');
+    privateUpdateUploadRow(row,'Bloque '+part+' de '+total+' · intento '+attempt+'/8',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');
     try{
      await privateSendMp4Part({sessionId,part,piece:file.slice(from,to),key,row,onProgress:n=>privateUpdateUploadRow(row,'Subiendo bloque '+part+' de '+total,Math.min(99,Math.floor((confirmed+n)/file.size*100)),'uploading')});
      delivered=true;
     }catch(e){
      error=e;
-     if(e?.permanent||row.cancelRequested)break;
-     if(attempt<5)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
+     if(row.cancelRequested)break;
+     // The response to this block may have been lost AFTER R2 committed it.
+     // Always ask the server before resending, preventing an accidental
+     // duplicate and allowing continuation after an XHR network timeout.
+     try{
+      const checkpoint=await privateRequest('/api/private/upload/progress?id='+encodeURIComponent(sessionId),key,true);
+      if(checkpoint?.uploadId===sessionId&&Array.isArray(checkpoint.receivedParts)&&checkpoint.receivedParts.includes(part)){
+       delivered=true;
+       privateUpdateUploadRow(row,'Bloque '+part+' recuperado desde el progreso confirmado en R2.',Math.min(99,Math.floor((confirmed+(to-from))/file.size*100)),'uploading');
+       break;
+      }
+     }catch(checkError){
+      if([401,403,404].includes(checkError?.status)){
+       error=checkError?.status===404?new Error('La sesión fue cancelada o caducó en R2; sus bloques ya no pueden retomarse. Reinicia esta película desde cero.'):checkError;
+       error.permanent=true;
+       break;
+      }
+     }
+     if(e?.permanent)break;
+     if(attempt<8){
+      privateUpdateUploadRow(row,'Conexión interrumpida o bloque ocupado. Esperando para retomar bloque '+part+' sin perder los anteriores…',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');
+      await new Promise(resolve=>setTimeout(resolve,Math.min(12000,2000*attempt)));
+     }
     }
    }
    if(!delivered)throw error||Error('No se pudo enviar el bloque '+part+'.');
@@ -2758,15 +2823,22 @@ async function privateVerifyUploadKey(key){
 }
 async function privateRetryUpload(id){
  const row=privateBatchUploads.find(x=>x.id===String(id||''));
- if(!row||row.phase!=='failed'||row.cancelRequested)return;
+ if(!row||row.phase!=='failed'||row.cancelRequested||row.retrying)return;
  if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para recuperar sus bloques confirmados.');
  const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
  if(!key)return toast('Introduce el código de administración.');
+ row.retrying=true;privateRenderUploadBatch(true);
  privateAdminKeyMemory=key;
- if(!await privateVerifyUploadKey(key))return;
- row.uploadKey=key;row.retrying=true;row.allowLegacy=true;
- privateUpdateUploadRow(row,'En cola para recuperar los bloques anteriores…',row.percent,'queued');
- void privateDrainUploadQueue();
+ try{
+  if(!await privateVerifyUploadKey(key))return;
+  if(row.phase!=='failed'||row.cancelRequested)return;
+  row.uploadKey=key;row.allowLegacy=true;
+  privateUpdateUploadRow(row,'Consultando los bloques guardados para reanudar…',row.percent,'queued');
+  void privateDrainUploadQueue();
+ }finally{
+  if(row.phase==='failed')row.retrying=false;
+  privateRenderUploadBatch(true);
+ }
 }
 async function privateDrainUploadQueue(){
  if(privateBatchRunning)return;
