@@ -2318,7 +2318,7 @@ function privateClearUpload(file){
 function privateUploadBatchMarkup(){
  if(!privateBatchUploads.length)return '';
  const labels={queued:'En espera',uploading:'Subiendo',cancelling:'Cancelando',cancelPending:'Cancelación no confirmada',cancelled:'Cancelada',finalizing:'Confirmando en R2',processing:'Convirtiendo o verificando',prepared:'Preparación terminada',stored:'Guardada en R2',review:'Pendiente de revisión',failed:'Interrumpida'};
- return '<div class="panel-card" style="padding:13px"><h3 style="margin:0 0 10px">Estado de las películas</h3>'+
+ return '<div class="panel-card" style="padding:13px"><h3 style="margin:0 0 10px">Estado de las películas</h3><p class="hint" style="margin:0 0 8px">Cancelar detiene solamente la película seleccionada. Eliminar de la lista no borra videos ya guardados en R2.</p>'+
   privateBatchUploads.map(row=>{
    const pct=Math.max(0,Math.min(100,Math.round(Number(row.percent)||0)));
    const id=esc(row.id);
@@ -2497,8 +2497,9 @@ async function privateFinalizeCancelledUpload(row){
 async function privateCancelUploadRow(id,removeAfter=false){
  const row=privateBatchUploads.find(x=>x.id===String(id||''));
  if(!row||row.removed)return;
- if(removeAfter)row.removeAfterCancel=true;
  if(['stored','prepared','review','processing'].includes(row.phase)){
+  if(removeAfter&&!confirm('¿Quitar esta película de la lista de subidas? No se eliminará de Cloudflare R2.'))return;
+  if(removeAfter)row.removeAfterCancel=true;
   if(!removeAfter){toast('Este archivo ya está en Cloudflare R2. Para eliminarlo, utiliza Gestionar títulos, portadas y películas.');return;}
   privateDropUploadRow(row); // Only remove the status card, never the stored movie.
   return;
@@ -2507,6 +2508,7 @@ async function privateCancelUploadRow(id,removeAfter=false){
   toast('La película se está confirmando en R2. Comprueba primero si terminó; no se borrará una película ya guardada.');
   return;
  }
+ if(removeAfter)row.removeAfterCancel=true;
  if(row.phase==='cancelled'){
   if(removeAfter)privateDropUploadRow(row);
   return;
@@ -2518,6 +2520,7 @@ async function privateCancelUploadRow(id,removeAfter=false){
   if(removeAfter)privateDropUploadRow(row);
   return;
  }
+ if(!row.cancelRequested&&!confirm('¿Cancelar la subida de «'+row.name+'»? Solo se detendrá este archivo; las otras películas seguirán subiendo.'))return;
  row.cancelRequested=true;
  if(row.phase==='queued'){
   privateForgetUploadRow(row);
