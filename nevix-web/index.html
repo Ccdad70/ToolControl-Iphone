@@ -2314,15 +2314,30 @@ function privateClearUpload(file){
  try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
  try{const old=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');if(old?.fileName===file.name&&Number(old?.fileSize)===file.size)sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);}catch(_){}
 }
+
 function privateUploadBatchMarkup(){
  if(!privateBatchUploads.length)return '';
- const labels={queued:'En espera',uploading:'Subiendo',processing:'Convirtiendo o verificando',prepared:'Preparación terminada',stored:'Guardada en R2',review:'Pendiente de revisión',failed:'Interrumpida'};
+ const labels={queued:'En espera',uploading:'Subiendo',cancelling:'Cancelando',cancelPending:'Cancelación no confirmada',cancelled:'Cancelada',finalizing:'Confirmando en R2',processing:'Convirtiendo o verificando',prepared:'Preparación terminada',stored:'Guardada en R2',review:'Pendiente de revisión',failed:'Interrumpida'};
  return '<div class="panel-card" style="padding:13px"><h3 style="margin:0 0 10px">Estado de las películas</h3>'+
   privateBatchUploads.map(row=>{
    const pct=Math.max(0,Math.min(100,Math.round(Number(row.percent)||0)));
+   const id=esc(row.id);
+   const cancellable=['queued','uploading','failed','cancelPending'].includes(row.phase);
+   const waiting=row.phase==='cancelling';
+   const removable=['cancelled','failed','cancelPending','prepared','stored','review','processing','queued','uploading'].includes(row.phase);
+   let controls='';
+   if(cancellable&&!row.cancelRequested)
+    controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'">✕ Cancelar subida</button>';
+   if((waiting||row.phase==='cancelPending')&&row.cancelRequested)
+    controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'" '+(waiting?'disabled':'')+'>'+(waiting?'Cancelando…':'↻ Reintentar cancelación')+'</button>';
+   if(removable)
+    controls+='<button class="btn btn-sm" type="button" data-action="private-remove-upload" data-id="'+id+'">'+(row.phase==='uploading'||row.phase==='queued'||row.phase==='cancelPending'?'✕ Cancelar y quitar':'Eliminar de la lista')+'</button>';
    return '<div style="padding:10px 0;border-bottom:1px solid #50313b"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">'+esc(row.name)+'</b><b>'+pct+' %</b></div>'
     +'<div class="hint" style="margin:4px 0">'+esc(labels[row.phase]||'Pendiente')+' · '+(Number(row.size)/1048576).toFixed(1)+' MiB</div>'
-    +'<progress value="'+pct+'" max="100" style="width:100%;height:10px;accent-color:#ef1d3c"></progress><div class="hint" style="overflow-wrap:anywhere">'+esc(row.detail||'Esperando turno')+'</div></div>';
+    +'<progress value="'+pct+'" max="100" style="width:100%;height:10px;accent-color:'+(row.phase==='cancelled'?'#879397':'#ef1d3c')+'"></progress>'
+    +'<div class="hint" style="overflow-wrap:anywhere">'+esc(row.detail||'Esperando turno')+'</div>'
+    +(controls?'<div class="actions" style="margin-top:9px;gap:8px;flex-wrap:wrap">'+controls+'</div>':'')
+    +'</div>';
   }).join('')+'</div>';
 }
 function privateRenderUploadBatch(force=false){
@@ -2333,35 +2348,43 @@ function privateRenderUploadBatch(force=false){
  const info=document.getElementById('private-upload-status');
  if(info&&privateBatchUploads.length){
   const n=privateBatchUploads.reduce((t,x)=>(t[x.phase]=(t[x.phase]||0)+1,t),{});
-  info.textContent='Subiendo: '+(n.uploading||0)+' · En cola: '+(n.queued||0)+' · Verificando: '+(n.processing||0)+' · Completadas: '+((n.prepared||0)+(n.stored||0))+' · Revisar: '+(n.review||0)+' · Interrumpidas: '+(n.failed||0)+'.';
+  info.textContent='Subiendo: '+(n.uploading||0)+' · En cola: '+(n.queued||0)+' · Cancelando: '+((n.cancelling||0)+(n.cancelPending||0))+' · Canceladas: '+(n.cancelled||0)+' · Verificando: '+(n.processing||0)+' · Completadas: '+((n.prepared||0)+(n.stored||0))+' · Revisar: '+(n.review||0)+' · Interrumpidas: '+(n.failed||0)+'.';
  }
 }
 function privateUpdateUploadRow(row,detail,pct,phase){
+ if(row.removed||row.cancelRequested&&phase&&!['cancelling','cancelPending','cancelled'].includes(phase))return;
  if(typeof detail==='string')row.detail=detail;
  if(Number.isFinite(pct))row.percent=Math.max(0,Math.min(100,pct));
  const changed=phase&&row.phase!==phase;
  if(phase)row.phase=phase;
  privateRenderUploadBatch(Boolean(changed));
 }
-async function privateSendMp4Part({sessionId,part,piece,key,onProgress}){
+
+async function privateSendMp4Part({sessionId,part,piece,key,onProgress,row}){
+ if(row?.cancelRequested)throw Error('Se solicitó cancelar la subida.');
  return await new Promise((resolve,reject)=>{
   const xhr=new XMLHttpRequest();
+  if(row)row.xhr=xhr;
+  const release=()=>{if(row?.xhr===xhr)row.xhr=null;};
   xhr.open('POST',WATCHMODE_BACKEND+'/api/private/upload/part?id='+encodeURIComponent(sessionId)+'&part='+part,true);
   xhr.setRequestHeader('X-Nevix-Admin-Key',key);
   xhr.setRequestHeader('Content-Type','application/octet-stream');
   xhr.timeout=180000;
-  xhr.upload.onprogress=event=>{if(event.lengthComputable&&typeof onProgress==='function')onProgress(event.loaded);};
+  xhr.upload.onprogress=event=>{if(!row?.cancelRequested&&event.lengthComputable&&typeof onProgress==='function')onProgress(event.loaded);};
   xhr.onload=()=>{
+   release();
    let result={};try{result=JSON.parse(xhr.responseText||'{}');}catch(_){}
+   if(row?.cancelRequested)return reject(Error('Subida cancelada por administración.'));
    if(xhr.status>=200&&xhr.status<300&&result.ok&&Number(result.part)===part)return resolve(result);
    const error=Error(result.message||'El servidor rechazó el bloque '+part+' (HTTP '+xhr.status+').');
-   error.permanent=[400,401,403,404,413,422].includes(xhr.status);
+   error.permanent=[400,401,403,404,409,413,422].includes(xhr.status);
    reject(error);
   };
-  xhr.onerror=()=>reject(Error('Falló la conexión al enviar el bloque '+part+'. Comprueba Wi-Fi o datos móviles.'));
-  xhr.ontimeout=()=>reject(Error('El bloque '+part+' superó el tiempo de conexión.'));
-  xhr.onabort=()=>reject(Error('El envío del bloque '+part+' fue interrumpido.'));
+  xhr.onerror=()=>{release();reject(Error('Falló la conexión al enviar el bloque '+part+'. Comprueba Wi-Fi o datos móviles.'));};
+  xhr.ontimeout=()=>{release();reject(Error('El bloque '+part+' superó el tiempo de conexión.'));};
+  xhr.onabort=()=>{release();reject(Error('La transferencia del bloque '+part+' fue detenida.'));};
   xhr.send(piece);
+  if(row?.cancelRequested)try{xhr.abort();}catch(_){}
  });
 }
 async function privateWatchAutomaticMovie(key,started,onUpdate){
@@ -2419,9 +2442,100 @@ async function privateWatchAutomaticMovie(key,started,onUpdate){
  update('El MP4 sigue pendiente de confirmación. Su archivo está guardado; revisa su estado desde Administración.');
  return false;
 }
+
+function privateForgetUploadRow(row){
+ const sessions=privateUploadSessions();
+ if(row.token)delete sessions[row.token];
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));}catch(_){}
+ try{
+  const legacy=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');
+  if(legacy?.fileName===row.name&&Number(legacy?.fileSize)===Number(row.size))
+   sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);
+ }catch(_){}
+}
+function privateDropUploadRow(row){
+ if(!row)return;
+ row.removed=true;
+ privateBatchUploads=privateBatchUploads.filter(x=>x!==row);
+ privateRenderUploadBatch(true);
+}
+async function privateFinalizeCancelledUpload(row){
+ if(row.cancelPromise)return row.cancelPromise;
+ row.cancelPromise=(async()=>{
+  if(row.removed)return;
+  const id=String(row.sessionId||'');
+  if(!id){
+   // A cancelled queued movie has no server-side multipart data to release.
+   if(row.waitingStart)return;
+  }else{
+   let completed=false;
+   for(let attempt=0;attempt<14;attempt++){
+    try{
+     const result=await privateRequest('/api/private/upload/abort',row.uploadKey,true,'POST',{uploadId:id});
+     if(result.cancelled){completed=true;break;}
+     if(!result.cancelPending)throw Error('R2 no confirmó la cancelación.');
+    }catch(e){
+     if(attempt>=13)throw e;
+     if(/finaliz|ya no está activa|no está activa/i.test(String(e?.message||'')))throw e;
+    }
+    await new Promise(resolve=>setTimeout(resolve,1200));
+   }
+   if(!completed)throw Error('R2 no confirmó que la sesión se haya eliminado.');
+  }
+  privateForgetUploadRow(row);
+  row.sessionId='';row.waitingStart=false;row.file=null;row.xhr=null;
+  row.cancelRequested=true;
+  privateUpdateUploadRow(row,'Subida cancelada y bloques incompletos liberados de Cloudflare R2.',row.percent,'cancelled');
+  if(row.removeAfterCancel)privateDropUploadRow(row);
+ })().catch(e=>{
+  row.phase='cancelPending';
+  row.detail='Cancelación aún sin confirmar: '+String(e?.message||'Intenta nuevamente.')+'. No se enviarán más bloques de esta película.';
+  privateRenderUploadBatch(true);
+ }).finally(()=>{row.cancelPromise=null;});
+ return row.cancelPromise;
+}
+async function privateCancelUploadRow(id,removeAfter=false){
+ const row=privateBatchUploads.find(x=>x.id===String(id||''));
+ if(!row||row.removed)return;
+ if(removeAfter)row.removeAfterCancel=true;
+ if(['stored','prepared','review','processing'].includes(row.phase)){
+  if(!removeAfter){toast('Este archivo ya está en Cloudflare R2. Para eliminarlo, utiliza Gestionar títulos, portadas y películas.');return;}
+  privateDropUploadRow(row); // Only remove the status card, never the stored movie.
+  return;
+ }
+ if(row.phase==='finalizing'){
+  toast('La película se está confirmando en R2. Comprueba primero si terminó; no se borrará una película ya guardada.');
+  return;
+ }
+ if(row.phase==='cancelled'){
+  if(removeAfter)privateDropUploadRow(row);
+  return;
+ }
+ if(row.phase==='failed'&&!row.sessionId&&!row.waitingStart){
+  privateForgetUploadRow(row);
+  row.cancelRequested=true;row.file=null;
+  privateUpdateUploadRow(row,'Subida retirada. No queda una sesión activa en esta página.',row.percent,'cancelled');
+  if(removeAfter)privateDropUploadRow(row);
+  return;
+ }
+ row.cancelRequested=true;
+ if(row.phase==='queued'){
+  privateForgetUploadRow(row);
+  row.file=null;
+  privateUpdateUploadRow(row,'Cancelada antes de comenzar; no se subió ningún archivo.',0,'cancelled');
+  if(removeAfter)privateDropUploadRow(row);
+  return;
+ }
+ privateUpdateUploadRow(row,'Cancelando la transferencia y liberando los bloques en R2…',row.percent,'cancelling');
+ if(row.xhr)try{row.xhr.abort();}catch(_){}
+ if(row.sessionId)await privateFinalizeCancelledUpload(row);
+ // If start is still in flight, privateUploadOneFilm will cancel as soon as the session ID arrives.
+}
 async function privateUploadOneFilm(file,key,row,allowLegacy=false){
  let sessionId='';
+ row.uploadKey=key;row.waitingStart=true;
  try{
+  if(row.cancelRequested)throw Error('Cancelación solicitada.');
   privateUpdateUploadRow(row,'Conectando con Cloudflare R2…',0,'uploading');
   let upload=null,received=new Set();
   const previous=privateStoredUpload(file,allowLegacy);
@@ -2434,24 +2548,28 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
     }else privateClearUpload(file);
    }catch(_){privateClearUpload(file);}
   }
+  if(row.cancelRequested)throw Error('Cancelación solicitada.');
   if(!upload)upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size});
-  sessionId=String(upload.uploadId||'');
+  sessionId=String(upload.uploadId||'');row.sessionId=sessionId;row.waitingStart=false;
+  if(row.cancelRequested)throw Error('Cancelación solicitada.');
   const size=Number(upload.chunkSize),total=Number(upload.chunks);
   if(!/^[a-f0-9-]{36}$/i.test(sessionId)||!Number.isSafeInteger(size)||size<5*1024*1024||!Number.isSafeInteger(total)||total!==Math.ceil(file.size/size))throw Error('La sesión de subida no es válida.');
   privateSaveUpload(file,sessionId);
   let confirmed=0;
   for(let part=1;part<=total;part++){
+   if(row.cancelRequested)throw Error('Cancelación solicitada.');
    const from=(part-1)*size,to=Math.min(file.size,from+size);
    if(received.has(part)){confirmed+=to-from;privateUpdateUploadRow(row,'Retomando bloques existentes…',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');continue;}
    let delivered=false,error=null;
    for(let attempt=1;attempt<=5&&!delivered;attempt++){
+    if(row.cancelRequested)throw Error('Cancelación solicitada.');
     privateUpdateUploadRow(row,'Bloque '+part+' de '+total+' · intento '+attempt+'/5',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');
     try{
-     await privateSendMp4Part({sessionId,part,piece:file.slice(from,to),key,onProgress:n=>privateUpdateUploadRow(row,'Subiendo bloque '+part+' de '+total,Math.min(99,Math.floor((confirmed+n)/file.size*100)),'uploading')});
+     await privateSendMp4Part({sessionId,part,piece:file.slice(from,to),key,row,onProgress:n=>privateUpdateUploadRow(row,'Subiendo bloque '+part+' de '+total,Math.min(99,Math.floor((confirmed+n)/file.size*100)),'uploading')});
      delivered=true;
     }catch(e){
      error=e;
-     if(e?.permanent)break;
+     if(e?.permanent||row.cancelRequested)break;
      if(attempt<5)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
     }
    }
@@ -2460,10 +2578,11 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
    privateSaveUpload(file,sessionId);
    privateUpdateUploadRow(row,'Bloque '+part+' de '+total+' confirmado',Math.min(99,Math.floor(confirmed/file.size*100)),'uploading');
   }
-  privateUpdateUploadRow(row,'Confirmando la película completa en R2…',99,'uploading');
+  if(row.cancelRequested)throw Error('Cancelación solicitada.');
+  privateUpdateUploadRow(row,'Confirmando la película completa en R2…',99,'finalizing');
   const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId});
   if(!done?.stored)throw Error('R2 todavía no confirmó la película completa.');
-  sessionId='';privateClearUpload(file);
+  sessionId='';row.sessionId='';privateClearUpload(file);
   if(done.autoProcessing&&done.jobId){
    privateUpdateUploadRow(row,'Guardada. Esperando verificación o conversión automática a MP4…',100,'processing');
    // El procesamiento no bloquea la subida de la próxima película.
@@ -2474,8 +2593,9 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   else if(done.metadataPending)privateUpdateUploadRow(row,'Guardada en R2. Revisa su estado y portada desde Administración.',100,'review');
   else privateUpdateUploadRow(row,'Archivo guardado. Comprueba su compatibilidad y portada.',100,'stored');
  }catch(e){
-  privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
- }finally{row.file=null;privateRenderUploadBatch(true);}
+  if(row.cancelRequested)await privateFinalizeCancelledUpload(row);
+  else privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
+ }finally{row.waitingStart=false;row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
 }
 async function privateUploadAdmin(){
  if(privateBatchRunning)return;
@@ -2485,7 +2605,7 @@ async function privateUploadAdmin(){
  if(!picked.length){toast('Selecciona una o varias películas.');return;}
  const seen=new Set(),files=picked.filter(f=>{const token=privateFileToken(f);if(seen.has(token))return false;seen.add(token);return true;});
  const rows=files.map((file,i)=>({
-  id:String(Date.now())+'-'+i,name:file.name,size:file.size,file,percent:0,
+  id:String(Date.now())+'-'+i,name:file.name,size:file.size,file,token:privateFileToken(file),sessionId:'',uploadKey:key,percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
   phase:/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(file.name)&&file.size>0&&file.size<5*1024*1024*1024?'queued':'failed',
   detail:'Esperando turno de transferencia'
  }));
@@ -2507,6 +2627,7 @@ async function privateUploadAdmin(){
     const i=next++;
     if(i>=waiting.length)break;
     const row=waiting[i];
+    if(row.cancelRequested||!row.file)continue;
     await privateUploadOneFilm(row.file,key,row,waiting.length===1);
    }
   }));
@@ -3267,6 +3388,7 @@ function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perd
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
  switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
+  case 'private-cancel-upload':void privateCancelUploadRow(id,false);break;case 'private-remove-upload':void privateCancelUploadRow(id,true);break;
   case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
