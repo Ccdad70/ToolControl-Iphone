@@ -275,7 +275,11 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/dubbing/start'){
     if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied'});
-    return reply(res,202,await dubbing.start(await body(req)));
+    const args=await body(req);
+    const inspected=await audioTracks.status(string(args.id));
+    if(inspected.state!=='ready')return reply(res,409,{error:'audio_inspection_required',message:'Antes de gastar créditos, usa Detectar y preparar idiomas para comprobar si la película ya trae español.'});
+    if(inspected.tracks.some(x=>x.language==='es'))return reply(res,409,{error:'spanish_original_available',message:'Esta película ya trae una pista en español. Selecciónala en el reproductor sin pagar doblaje con IA.'});
+    return reply(res,202,await dubbing.start(args));
    }
    if(url.pathname==='/api/private/video'){
     if(req.method!=='GET'&&req.method!=='HEAD')return reply(res,405,{error:'method_not_allowed'});
