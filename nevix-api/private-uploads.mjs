@@ -1,4 +1,4 @@
-import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, HeadObjectCommand, ListMultipartUploadsCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 
 const CHUNK_SIZE=5*1024*1024;
@@ -13,6 +13,64 @@ const safeString=x=>String(x||'').trim();
 export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
  const active=new Map();
  const cancelled=new Map();
+ let cleanupRunning=null;
+ let cleanupReport={ok:null,checked:0,aborted:0,skipped:0,failed:0,message:'Sin comprobar'};
+ const ownIncompleteKey=key=>/^peliculas\/\d{13}-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}-.+$/i.test(String(key||''));
+ async function cleanupIncomplete(){
+  if(cleanupRunning)return cleanupRunning;
+  if(active.size>0)return {ok:false,error:'uploads_in_progress',message:'Primero cancela o termina las subidas que sigan activas.'};
+  cleanupRunning=(async()=>{
+   const report={ok:true,checked:0,aborted:0,skipped:0,failed:0,remaining:0,message:''};
+   let keyMarker,uploadIdMarker,seen=0;
+   const maxPages=40;
+   try{
+    for(let page=0;page<maxPages;page++){
+     const listing=await client.send(new ListMultipartUploadsCommand({
+      Bucket:bucket,Prefix:PREFIX,MaxUploads:1000,
+      ...(keyMarker?{KeyMarker:keyMarker}:{}),
+      ...(uploadIdMarker?{UploadIdMarker:uploadIdMarker}:{})
+     }));
+     const uploads=Array.isArray(listing.Uploads)?listing.Uploads:[];
+     for(const upload of uploads){
+      const key=safeString(upload.Key),id=safeString(upload.UploadId);
+      report.checked++;
+      if(!ownIncompleteKey(key)||!id){report.skipped++;continue;}
+      // A complete object is not an incomplete upload; never delete published films.
+      try{
+       const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
+       if(Number(head.ContentLength)>=0){report.skipped++;continue;}
+      }catch(err){
+       const missing=err?.name==='NoSuchKey'||err?.name==='NotFound'||Number(err?.$metadata?.httpStatusCode)===404;
+       if(!missing){report.failed++;continue;}
+      }
+      try{
+       await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:key,UploadId:id}));
+       report.aborted++;
+      }catch(e){
+       if(e?.name==='NoSuchUpload'||Number(e?.$metadata?.httpStatusCode)===404)report.aborted++;
+       else{report.failed++;console.error('NÉVIX R2 orphan cleanup error type='+safeString(e?.name||'error').slice(0,45));}
+      }
+     }
+     seen+=uploads.length;
+     if(!listing.IsTruncated)break;
+     keyMarker=safeString(listing.NextKeyMarker);
+     uploadIdMarker=safeString(listing.NextUploadIdMarker);
+     if(!keyMarker||!uploadIdMarker){report.ok=false;report.message='R2 no entregó la paginación completa de sesiones incompletas.';break;}
+     if(page===maxPages-1){report.ok=false;report.message='Se alcanzó el límite de lotes; repetir limpieza.';}
+    }
+    if(report.failed)report.ok=false;
+    if(!report.message)report.message=report.ok?'Limpieza verificada en R2. Solo se cancelaron transferencias multipart sin completar.':'Algunas sesiones no pudieron cancelarse.';
+   }catch(e){
+    report.ok=false;report.message='No se pudo listar las subidas incompletas de R2.';
+    console.error('NÉVIX R2 orphan cleanup failed: '+safeString(e?.name||'Error').slice(0,60)+' http='+safeString(e?.$metadata?.httpStatusCode||'none'));
+   }
+   cleanupReport=report;
+   console.log('NÉVIX R2 orphan multipart cleanup: ok='+report.ok+' checked='+report.checked+' aborted='+report.aborted+' skipped='+report.skipped+' failed='+report.failed);
+   return report;
+  })().finally(()=>{cleanupRunning=null;});
+  return cleanupRunning;
+ }
+
  // A cancelled multipart session is never published as a movie in R2.
  async function cancelSession(id,s){
   if(s.finalizing)return {status:409,data:{ok:false,error:'upload_finalizing',message:'R2 está finalizando esta película. Comprueba si ya aparece en la biblioteca antes de eliminarla.'}};
@@ -78,7 +136,13 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
   if(!url.pathname.startsWith('/api/private/upload/'))return false;
   await expire();
   try{
+   if(url.pathname==='/api/private/upload/cleanup'){
+    if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
+    const report=await cleanupIncomplete();
+    respond(res,report.ok?200:report.error==='uploads_in_progress'?409:502,report);return true;
+   }
    if(url.pathname==='/api/private/upload/start'){
+    if(cleanupRunning){respond(res,503,{error:'cleanup_in_progress',message:'Finalizando limpieza de subidas incompletas en R2. Vuelve a intentar.'});return true;}
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
     const data=await readJson(req),name=safeString(data.name),size=Number(data.size);
     const ext=name.match(ALLOWED);
@@ -182,5 +246,5 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    return true;
   }
  }
- return {handle,chunkSize:CHUNK_SIZE};
+ return {handle,chunkSize:CHUNK_SIZE,cleanupIncomplete,cleanupStatus:()=>cleanupReport};
 }
