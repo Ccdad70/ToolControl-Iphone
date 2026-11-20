@@ -2,6 +2,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListOb
 import { createPrivateUploads } from './private-uploads.mjs';
 import { createPrivateRemux } from './private-remux-r2.mjs';
 import { createPrivateDubbing } from './private-dubbing.mjs';
+import { createPrivateAudioTracks } from './private-audio-tracks.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const PREFIX='peliculas/';
@@ -176,27 +177,30 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    await saveIndex();
   }
  }
- async function publishValidated(entry){
+ async function publishValidated(entry,detectedAudioTracks=[]){
   const rows=await sync(true),x=rows.find(y=>y.key===entry.key&&y.id===entry.id);
   if(!x)throw Error('El MP4 ya no existe.');
   x.status=x.publicationStatus==='ready'?'ready':'review';
-  x.verified=true;x.container='standard';x.validationError='';
+  x.verified=true;x.container='standard';x.validationError='';x.detectedAudioTracks=detectedAudioTracks;
   delete x.publicationStatus;
   await saveIndex();
   console.log('NÉVIX auto MP4 verified: repair=false published='+(x.status==='ready'));
  }
- async function publishRepaired(original,key,size){
+ async function publishRepaired(original,key,size,detectedAudioTracks=[]){
   const rows=await sync(true);
   const old=rows.find(x=>x.key===original.key&&x.id===original.id),next=rows.find(x=>x.key===key&&x.size===size);
   if(!old||!next||!['ready','processing','processing_failed','review'].includes(old.status))throw Error('No se pudo comprobar la copia MP4 y el original.');
   const status=old.publicationStatus||old.status;
-  Object.assign(next,{title:old.title,year:old.year||'',image:old.image||'',description:old.description||'',status:status==='ready'?'ready':'review',container:'standard',verified:true,remuxed:true,backupKey:old.key,addedAt:old.addedAt||new Date().toISOString()});
+  Object.assign(next,{title:old.title,year:old.year||'',image:old.image||'',description:old.description||'',status:status==='ready'?'ready':'review',container:'standard',verified:true,remuxed:true,backupKey:old.key,detectedAudioTracks,addedAt:old.addedAt||new Date().toISOString()});
   old.status='backup';old.validationError='';delete old.publicationStatus;
   await saveIndex();cacheUntil=Date.now()+90000;
   console.log('NÉVIX R2 MP4 prepared: published='+(next.status==='ready')+' backup=true');
   void checkPlayback();
  }
  remux=configured?createPrivateRemux({client,bucket,finalize:publishRepaired,finishWithoutRemux:publishValidated,onFailure:markValidationFailed}):null;
+ const audioTracks=configured?createPrivateAudioTracks({client,bucket,admin,family,origin,
+   findFilm:async id=>(await sync()).find(x=>x.id===id&&x.status==='ready'&&OUTPUT_MP4.test(x.key))||null,
+   reply:(res,status,data)=>send(res,status,data)}):null;
  const dubbing=configured?createPrivateDubbing({client,bucket,admin,family,origin,
    findFilm:async id=>(await sync()).find(x=>x.id===id&&x.status==='ready'&&OUTPUT_MP4.test(x.key))||null,
    reply:(res,status,data)=>send(res,status,data),baseUrl:'https://nevix-catalog-api.onrender.com'}):null;
@@ -240,9 +244,26 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    }
    if(url.pathname==='/api/private/status'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
-    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround'});
+    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_multilanguage_stereo'});
    }
    if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY en Render.'});
+   if(url.pathname==='/api/private/audio/file'){
+    await audioTracks.serve(req,res,url);return;
+   }
+   if(url.pathname==='/api/private/audio/status'){
+    if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
+    if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied'});
+    return reply(res,200,await audioTracks.status(string(url.searchParams.get('id'))));
+   }
+   if(url.pathname==='/api/private/audio/scan'){
+    if(req.method!=='POST')return reply(res,405,{error:'method_not_allowed'});
+    if(!auth(req,'admin'))return reply(res,401,{error:'admin_access_denied'});
+    const arg=await body(req);
+    if(!/^priv-[a-f0-9]{24}$/.test(string(arg.id)))return reply(res,400,{error:'invalid_movie'});
+    const entry=(await sync()).find(x=>x.id===arg.id&&x.status==='ready'&&OUTPUT_MP4.test(x.key));
+    if(!entry)return reply(res,404,{error:'movie_not_found'});
+    return reply(res,202,audioTracks.start(entry.id));
+   }
    if(url.pathname==='/api/private/dub-source'||url.pathname==='/api/private/dub-audio'){
     await dubbing.serve(req,res,url);return;
    }
@@ -327,7 +348,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const rows=await sync(true);
     return reply(res,200,{files:rows.map(x=>({
      id:x.id,title:x.title,year:x.year||'',status:x.status,size:x.size||0,
-     remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',
+     remuxed:x.remuxed===true,verified:x.verified===true,detectedAudioTracks:x.detectedAudioTracks||[],validationError:x.validationError||'',
      backupOf:rows.find(y=>y.backupKey===x.key)?.id||'',job:remux?.findByFilm(x.id)||null
     })),count:rows.length});
    }
