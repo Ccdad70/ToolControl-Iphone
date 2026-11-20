@@ -12,8 +12,31 @@ const safeString=x=>String(x||'').trim();
 
 export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
  const active=new Map();
+ const cancelled=new Map();
+ // A cancelled multipart session is never published as a movie in R2.
+ async function cancelSession(id,s){
+  if(s.finalizing)return {status:409,data:{ok:false,error:'upload_finalizing',message:'R2 está finalizando esta película. Comprueba si ya aparece en la biblioteca antes de eliminarla.'}};
+  s.cancelRequested=true;
+  if(s.busy||s.abortInProgress)return {status:202,data:{ok:true,cancelPending:true,message:'Deteniendo el bloque actual antes de liberar la sesión de R2.'}};
+  s.abortInProgress=true;
+  try{
+   await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId}));
+   active.delete(id);
+   cancelled.set(id,Date.now());
+   console.log('NÉVIX R2 upload cancelled: partial multipart removed; no movie published');
+   return {status:200,data:{ok:true,cancelled:true}};
+  }catch(error){
+   if(error?.name==='NoSuchUpload'||error?.name==='NoSuchKey'||Number(error?.$metadata?.httpStatusCode)===404){
+    active.delete(id);cancelled.set(id,Date.now());
+    return {status:200,data:{ok:true,cancelled:true}};
+   }
+   console.error('NÉVIX R2 cancel failed: '+safeString(error?.name||'error').slice(0,36));
+   return {status:502,data:{ok:false,error:'cancel_not_confirmed',message:'Cloudflare R2 no confirmó la cancelación. Vuelve a intentarlo.'}};
+  }finally{s.abortInProgress=false;}
+ }
  const respond=(res,status,data)=>reply(res,status,data);
  async function expire(){
+  for(const [id,at] of cancelled){if(Date.now()-at>MAX_AGE)cancelled.delete(id);}
   for(const [id,s] of active){
    if(Date.now()-s.updatedAt>MAX_AGE){
     active.delete(id);
@@ -24,6 +47,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
  function session(res,id){
   const s=active.get(safeString(id));
   if(!s){respond(res,404,{error:'upload_expired',message:'La carga ya no está activa. Selecciona el archivo y vuelve a empezar.'});return null;}
+  if(s.cancelRequested){respond(res,409,{error:'upload_cancelling',message:'La subida está cancelándose. No se admiten más bloques.'});return null;}
   s.updatedAt=Date.now();return s;
  }
  async function readPart(req,expected){
@@ -56,7 +80,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
-    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false});
+    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false,finalizing:false,cancelRequested:false,abortInProgress:false});
     console.log('NÉVIX R2 upload start: format='+ext[1].toLowerCase()+' size_mb='+Math.round(size/1048576)+' chunks='+chunks);
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
    }
@@ -93,7 +117,10 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      s.parts.set(n,result.ETag);
      if(n===1||n%10===0||n===s.chunks)console.log('NÉVIX R2 upload part stored: n='+n+' total='+s.chunks);
      respond(res,200,{ok:true,part:n,received:data.length});
-    }finally{s.busy=false;}
+    }finally{
+     s.busy=false;
+     if(s.cancelRequested&&!s.finalizing)await cancelSession(safeString(url.searchParams.get('id')),s);
+    }
     return true;
    }
    if(url.pathname==='/api/private/upload/complete'){
@@ -102,7 +129,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     if(s.busy||s.parts.size!==s.chunks){respond(res,409,{error:'incomplete_upload',message:'Faltan partes por enviar.'});return true;}
     const parts=Array.from({length:s.chunks},(_,i)=>({PartNumber:i+1,ETag:s.parts.get(i+1)}));
     if(parts.some(x=>!x.ETag)){respond(res,409,{error:'missing_parts'});return true;}
-    s.busy=true;
+    s.busy=true;s.finalizing=true;
     try{
      try{
       await client.send(new CompleteMultipartUploadCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId,MultipartUpload:{Parts:parts}}));
@@ -117,7 +144,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      if(Number(verified.ContentLength)!==s.size)throw {status:502,error:'stored_size_mismatch',message:'R2 no confirmó el tamaño correcto de la película.'};
      active.delete(safeString(data.uploadId));
      console.log('NÉVIX R2 upload complete: size_mb='+Math.round(s.size/1048576)+' chunks='+s.chunks+' verified=true');
-    }finally{s.busy=false;}
+    }finally{s.busy=false;s.finalizing=false;}
     let result=null;
     try{result=await onComplete(s.key);}
     catch(e){console.error('NÉVIX automatic MP4 verification setup failed after upload: '+safeString(e?.name||'Error'));}
@@ -127,12 +154,13 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    }
    if(url.pathname==='/api/private/upload/abort'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
-    const data=await readJson(req),id=safeString(data.uploadId),s=active.get(id);
-    if(s&&!s.busy){
-     active.delete(id);
-     try{await client.send(new AbortMultipartUploadCommand({Bucket:bucket,Key:s.key,UploadId:s.uploadId}));}catch(_){}
-    }
-    respond(res,200,{ok:true});return true;
+    const data=await readJson(req),id=safeString(data.uploadId);
+    if(!/^[a-f0-9-]{36}$/i.test(id)){respond(res,400,{error:'invalid_upload_id'});return true;}
+    if(cancelled.has(id)){respond(res,200,{ok:true,cancelled:true});return true;}
+    const s=active.get(id);
+    if(!s){respond(res,404,{error:'upload_not_active',message:'La sesión ya no está activa. Comprueba que no se haya completado antes de quitarla de la lista.'});return true;}
+    const result=await cancelSession(id,s);
+    respond(res,result.status,result.data);return true;
    }
    respond(res,404,{error:'not_found'});return true;
   }catch(e){
