@@ -1980,6 +1980,7 @@ let privateFamilyCode='';
 let privateStorageReady=false;
 let privateLoadPending=false;
 let privateBatchUploads=[];
+let privateUploadDrafts=[];
 let privateBatchRunning=false;
 let privateBatchRenderAt=0;
 try{privateFamilyCode=sessionStorage.getItem('nevix-family-access')||'';}catch(_){}
@@ -2084,6 +2085,8 @@ function privateAdminSection(){
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
  +'<div class="nevix-netflix-panel"><div class="nevix-netflix-panel-head"><div><strong>Mostrar catálogo de Netflix</strong><p class="hint">Interruptor general para todos los dispositivos. No afecta las películas propias ni la TV en vivo.</p></div><label class="nevix-netflix-toggle"><input type="checkbox" id="netflix-catalog-switch" role="switch" aria-label="Activar o desactivar Netflix" '+(netflixCatalogEnabled?'checked ':'')+(!netflixSettingsLoaded||netflixSettingsSaving?'disabled':'')+'><span class="nevix-netflix-track"></span></label></div><p id="netflix-catalog-state" class="hint" aria-live="polite">'+(!netflixSettingsLoaded?'Consultando configuración…':netflixCatalogEnabled?'Netflix activado.':'Netflix desactivado.')+'</p></div>'
  +'<label class="field">Selecciona varias películas (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB por archivo)<input type="file" id="private-film-file" multiple accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*" '+(privateBatchRunning?'disabled':'')+'></label>'
+ +'<div id="private-upload-drafts" style="margin:12px 0" aria-live="polite">'+privateUploadDraftMarkup()+'</div>'
+ +'<p class="hint">Antes de subir, escribe el título de cada película y el año si lo sabes. Puedes buscar su portada en TMDB. Si se corta internet, utiliza Continuar subida; si cierras esta página, vuelve a seleccionar el mismo archivo para recuperar los bloques confirmados mientras la sesión siga activa.</p>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload" '+(privateBatchRunning?'disabled':'')+'>☁ Subir películas seleccionadas</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Revisar o preparar video (manual)</button></div>'
  +'<p class="hint">Cada video se revisa automáticamente. NÉVIX conserva el original en R2 y publica un MP4 H.264/AAC compatible: copia sin modificar el video si es posible, o convierte lo necesario. Para AC3/DTS 5.1 prepara audio estéreo y AAC 5.1. Las conversiones grandes dependen de los recursos de Render.</p>'
@@ -2306,6 +2309,70 @@ async function privateApproveAdmin(id){
  }catch(e){toast('No se pudo aprobar: '+e.message);}
 }
 
+
+function privateFilmNameHint(filename){
+ const base=String(filename||'').replace(/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i,'')
+  .replace(/[._]+/g,' ').replace(/\b(?:1080p|2160p|720p|480p|web[- ]?dl|bluray|brrip|x264|x265|hevc|h264|aac|dts)\b/ig,' ')
+  .replace(/\s+/g,' ').trim();
+ const year=(base.match(/\b(?:19|20)\d{2}\b/)||[])[0]||'';
+ const title=base.replace(/\b(?:19|20)\d{2}\b.*$/,'').replace(/[-\s]+$/,'').trim();
+ return {title:(title||base||'Película').slice(0,130),year};
+}
+function privateUploadDraftMarkup(){
+ if(!privateUploadDrafts.length)return '';
+ return '<div class="panel-card" style="padding:12px"><h3 style="margin:0 0 6px">Títulos y portadas antes de subir</h3>'
+ +'<p class="hint">Revisa cada título; NÉVIX lo guardará en R2 y buscará su portada al finalizar la transferencia.</p>'
+ +privateUploadDrafts.map((d,i)=>{
+  const goodPoster=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(d.image||''));
+  return '<div style="border-top:1px solid #414963;padding:12px 0">'
+   +'<b style="display:block;overflow-wrap:anywhere;margin-bottom:6px">'+esc(d.file.name)+'</b>'
+   +'<label class="field">Título real<input type="text" data-upload-draft="title" data-index="'+i+'" maxlength="130" value="'+esc(d.title)+'" placeholder="Nombre de la película"></label>'
+   +'<label class="field">Año (opcional)<input type="text" inputmode="numeric" data-upload-draft="year" data-index="'+i+'" maxlength="4" value="'+esc(d.year)+'" placeholder="Ej.: 2024"></label>'
+   +'<button type="button" class="btn btn-sm" data-action="private-upload-poster" data-id="'+i+'">🎞 Buscar portada</button>'
+   +'<div id="private-upload-draft-poster-'+i+'" class="hint" style="margin-top:8px">'
+   +(goodPoster?'<img src="'+esc(d.image)+'" alt="Portada de '+esc(d.title)+'" loading="lazy" style="width:120px;border-radius:9px;display:block;margin:5px 0">':'')
+   +esc(d.posterMessage||(goodPoster?'Portada encontrada; confirma que corresponda a la película.':'La portada también se buscará automáticamente al finalizar.'))+'</div></div>';
+ }).join('')+'</div>';
+}
+function privatePrepareUploadDrafts(){
+ const picked=Array.from(document.getElementById('private-film-file')?.files||[]);
+ const current=new Map(privateUploadDrafts.map(x=>[privateFileToken(x.file),x]));
+ privateUploadDrafts=picked.map(file=>{
+  const previous=current.get(privateFileToken(file));
+  return previous?{...previous,file}:{file,...privateFilmNameHint(file),image:'',posterMessage:''};
+ });
+ const node=document.getElementById('private-upload-drafts');
+ if(node)node.innerHTML=privateUploadDraftMarkup();
+}
+function privateReadUploadDraftValues(){
+ for(let i=0;i<privateUploadDrafts.length;i++){
+  const d=privateUploadDrafts[i];
+  const title=document.querySelector('[data-upload-draft="title"][data-index="'+i+'"]');
+  const year=document.querySelector('[data-upload-draft="year"][data-index="'+i+'"]');
+  if(title)d.title=title.value.trim();
+  if(year)d.year=year.value.trim();
+ }
+}
+async function privateFindUploadPoster(index){
+ privateReadUploadDraftValues();
+ const d=privateUploadDrafts[Number(index)];
+ if(!d)return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ const node=document.getElementById('private-upload-draft-poster-'+index);
+ if(!key){toast('Introduce el código de administración antes de buscar la portada.');return;}
+ if(d.title.length<2||d.title.length>130||d.year&&!/^(19|20)\d{2}$/.test(d.year)){
+  if(node)node.textContent='Introduce un título correcto y, si lo sabes, el año de estreno.';
+  return;
+ }
+ if(node)node.textContent='Buscando portada en TMDB…';
+ try{
+  const res=await privateRequest('/api/private/upload/metadata-preview',key,true,'POST',{title:d.title,year:d.year});
+  if(res.found&&/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(res.image||''))){
+   d.image=res.image;d.posterMessage='Coincidencia: '+String(res.matchedTitle||d.title)+(res.matchedYear?' ('+res.matchedYear+')':'')+'. Confirma que sea la portada correcta.';
+  }else{d.image='';d.posterMessage='No hay portada exacta. La película se guardará para revisarla desde Administración.';}
+ }catch(e){d.image='';d.posterMessage='No se pudo buscar la portada: '+String(e.message||'error')+'. La película se podrá subir igualmente.';}
+ if(node){const img=d.image?'<img src="'+esc(d.image)+'" alt="Portada encontrada" loading="lazy" style="width:120px;max-width:100%;border-radius:9px;display:block;margin:5px 0">':'';node.innerHTML=img+esc(d.posterMessage);}
+}
 const NEVIX_UPLOAD_SESSION_KEY='nevix-r2-mp4-session-v2'; // Sesiones anteriores compatibles
 const NEVIX_MULTI_UPLOAD_SESSION_KEY='nevix-r2-multi-sessions-v1';
 function privateFileToken(file){return [file.name,file.size,Number(file.lastModified)||0].join('::');}
