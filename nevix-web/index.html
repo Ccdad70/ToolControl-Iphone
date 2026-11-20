@@ -2323,12 +2323,16 @@ async function privateApproveAdmin(id){
 
 
 function privateFilmNameHint(filename){
- const base=String(filename||'').replace(/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i,'')
+ // File objects must be read through .name; String(file) becomes "[object File]".
+ const name=typeof filename==='string'?filename:String(filename?.name||'');
+ const base=name.replace(/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i,'')
   .replace(/[._]+/g,' ').replace(/\b(?:1080p|2160p|720p|480p|web[- ]?dl|bluray|brrip|x264|x265|hevc|h264|aac|dts)\b/ig,' ')
   .replace(/\s+/g,' ').trim();
  const year=(base.match(/\b(?:19|20)\d{2}\b/)||[])[0]||'';
  const title=base.replace(/\b(?:19|20)\d{2}\b.*$/,'').replace(/[-\s]+$/,'').trim();
- return {title:(title||base||'Película').slice(0,130),year};
+ // Numeric camera filenames do not identify a movie; require the real title.
+ if(/^\d{6,}$/.test(title))return {title:'',year:''};
+ return {title:(title||base||'').slice(0,130),year};
 }
 function privateUploadDraftMarkup(){
  if(!privateUploadDrafts.length)return '';
@@ -2337,7 +2341,9 @@ function privateUploadDraftMarkup(){
  +privateUploadDrafts.map((d,i)=>{
   const goodPoster=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(d.image||''));
   return '<div style="border-top:1px solid #414963;padding:12px 0">'
-   +'<b style="display:block;overflow-wrap:anywhere;margin-bottom:6px">'+esc(d.file.name)+'</b>'
+   +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+   +'<b style="min-width:0;overflow-wrap:anywhere">'+esc(d.file.name)+'</b>'
+   +'<button class="btn btn-danger btn-sm" type="button" data-action="private-upload-draft-remove" data-id="'+i+'" aria-label="Quitar '+esc(d.file.name)+' de los archivos seleccionados" '+(privateBatchRunning?'disabled':'')+'>✕ Quitar archivo</button></div>'
    +'<label class="field">Título real<input type="text" data-upload-draft="title" data-index="'+i+'" maxlength="130" value="'+esc(d.title)+'" placeholder="Nombre de la película"></label>'
    +'<label class="field">Año (opcional)<input type="text" inputmode="numeric" data-upload-draft="year" data-index="'+i+'" maxlength="4" value="'+esc(d.year)+'" placeholder="Ej.: 2024"></label>'
    +'<button type="button" class="btn btn-sm" data-action="private-upload-poster" data-id="'+i+'">🎞 Buscar portada</button>'
@@ -2347,14 +2353,33 @@ function privateUploadDraftMarkup(){
  }).join('')+'</div>';
 }
 function privatePrepareUploadDrafts(){
- const picked=Array.from(document.getElementById('private-film-file')?.files||[]);
+ if(privateBatchRunning)return;
+ const input=document.getElementById('private-film-file');
+ const picked=Array.from(input?.files||[]);
+ // Remove the stale FileList so a deleted selection can never be uploaded.
+ if(input)input.value='';
+ privateReadUploadDraftValues();
  const current=new Map(privateUploadDrafts.map(x=>[privateFileToken(x.file),x]));
- privateUploadDrafts=picked.map(file=>{
-  const previous=current.get(privateFileToken(file));
-  return previous?{...previous,file}:{file,...privateFilmNameHint(file),image:'',posterMessage:''};
- });
+ for(const file of picked){
+  const token=privateFileToken(file);
+  const previous=current.get(token);
+  current.set(token,previous?{...previous,file}:{file,...privateFilmNameHint(file),image:'',posterMessage:''});
+ }
+ privateUploadDrafts=Array.from(current.values());
  const node=document.getElementById('private-upload-drafts');
  if(node)node.innerHTML=privateUploadDraftMarkup();
+}
+function privateRemoveUploadDraft(index){
+ if(privateBatchRunning)return toast('La transferencia ya empezó; utiliza Cancelar y quitar para detener una subida en curso.');
+ const i=Number(index);
+ if(!Number.isSafeInteger(i)||i<0||i>=privateUploadDrafts.length)return;
+ privateReadUploadDraftValues();
+ const removed=privateUploadDrafts.splice(i,1)[0];
+ const input=document.getElementById('private-film-file');
+ if(input)input.value='';
+ const node=document.getElementById('private-upload-drafts');
+ if(node)node.innerHTML=privateUploadDraftMarkup();
+ toast('Archivo quitado de la selección: '+removed.file.name+'. Los demás archivos siguen seleccionados.');
 }
 function privateReadUploadDraftValues(){
  for(let i=0;i<privateUploadDrafts.length;i++){
@@ -2734,7 +2759,7 @@ async function privateRetryUpload(id){
 async function privateUploadAdmin(){
  if(privateBatchRunning)return;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- const input=document.getElementById('private-film-file'),picked=privateUploadDrafts.length?privateUploadDrafts.map(x=>x.file):Array.from(input?.files||[]);
+ const input=document.getElementById('private-film-file'),picked=privateUploadDrafts.map(x=>x.file);
  if(!key){toast('Introduce tu código de administración.');return;}
  if(!picked.length){toast('Selecciona una o varias películas.');return;}
  privateReadUploadDraftValues();
@@ -3528,7 +3553,7 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-draft-remove':privateRemoveUploadDraft(id);break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
   case 'private-cancel-upload':void privateCancelUploadRow(id,false);break;case 'private-remove-upload':void privateCancelUploadRow(id,true);break;
   case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
