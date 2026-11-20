@@ -1576,7 +1576,7 @@ async function loadCountry(code,force=false){
  if(activeCountryLoad){activeCountryLoad.controller.abort();activeCountryLoad=null;}
  state.loadingCountry=null;
  state.loadProgress='';
- const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&x.browserPlayable===true);
+ const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&(/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))));
  const recentEmpty=!force&&Date.now()-(countryRetryAt[code]||0)<90000;
  if(cached||recentEmpty){render();return;}
  if(force)state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));
@@ -1600,14 +1600,33 @@ async function loadCountry(code,force=false){
  try{
   const playlistCode=code==='gb'?'uk':code;
   const url=code==='int'?'https://shahrukhalid.github.io/nexonic-iptv/playlists/categories/news.m3u':'https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+playlistCode+'.m3u';
-  fetchLimit=setTimeout(()=>controller.abort(),9000);
-  const response=await fetch(url,{mode:'cors',cache:'no-store',signal:controller.signal});
-  if(!response.ok)throw Error('Lista temporalmente no disponible');
-  const playlist=await response.text();
+  fetchLimit=setTimeout(()=>controller.abort(),14000);
+  let playlist='';
+  try{
+   const response=await fetch(url,{mode:'cors',cache:'no-store',signal:controller.signal});
+   if(!response.ok)throw Error('Lista principal no disponible');
+   playlist=await response.text();
+  }catch(primaryError){
+   if(!active())return;
+   // Official fallback from the same open playlist repository.
+   const rawUrl=code==='int'
+    ?'https://raw.githubusercontent.com/Shahrukhalid/nexonic-iptv/main/playlists/categories/news.m3u'
+    :'https://raw.githubusercontent.com/Shahrukhalid/nexonic-iptv/main/playlists/countries/'+playlistCode+'.m3u';
+   const response=await fetch(rawUrl,{mode:'cors',cache:'no-store',signal:controller.signal});
+   if(!response.ok)throw Error('No se pudo consultar ninguna fuente de canales gratuitos.');
+   playlist=await response.text();
+  }
   clearTimeout(fetchLimit);fetchLimit=null;
   if(!active())return;
   const candidates=parseCountryPlaylist(playlist,country).concat(veExperimentalCandidates(country));
   const playable=[],checkedPublicNames=new Set();
+  // Preserve discovered free-to-air channels immediately. Mobile HLS probes
+  // can fail from CORS or autoplay restrictions even when a stream exists.
+  // Verified channels are upgraded after a playback probe succeeds.
+  const visibleCandidates=candidates.filter(x=>!state.failedStreams.includes(x.id));
+  state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code||!/^(Nexonic|Lista pública experimental)/.test(String(x.source||'')))
+    .concat(visibleCandidates.map(x=>({...x,browserPlayable:false,verifiedPlayback:false,testedAt:0})));
+  if(state.view==='live'&&state.category===countryName)render();
   for(let i=0;i<candidates.length;i+=4){
    if(!active())return;
    const results=await Promise.all(candidates.slice(i,i+4).map(async item=>({item,ok:await checkBrowserStream(item,controller.signal)})));
@@ -1620,8 +1639,10 @@ async function loadCountry(code,force=false){
     }
     playable.push({...result.item,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:Date.now()});
    }
-   // Las señales válidas aparecen por lotes; las fallidas no bloquean la interfaz.
-   state.worldChannels=state.worldChannels.filter(x=>x.countryCode!==code||!/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).concat(playable);
+   // Upgrade previously discovered candidates, never discard the rest
+   // simply because an embedded player cannot pass an automatic probe.
+   const verifiedById=new Map(playable.map(x=>[x.id,x]));
+   state.worldChannels=state.worldChannels.map(x=>verifiedById.get(x.id)||x);
    if(state.view==='live'&&state.category===countryName)render();
   }
   if(!active())return;
@@ -1629,7 +1650,7 @@ async function loadCountry(code,force=false){
   countryRetryAt[code]=Date.now();
   store();
   if(state.view==='live'&&state.category===countryName)render();
-  if(!playable.length)toast('Por ahora no hay emisiones compatibles de '+country[2]+'. Puedes usar los accesos oficiales.');
+  if(!playable.length&&!visibleCandidates.length)toast('La lista de '+country[2]+' no contiene canales HLS compatibles; revisa los accesos oficiales.');
  }catch(err){
   if(active()){
    countryRetryAt[code]=Date.now();
@@ -1670,7 +1691,7 @@ function saveCatalogSnapshot(){try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.s
 function movieCatalogItems(){const seen=new Set();return [...privateMovies,...state.movieRecentItems,...state.moviePopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function seriesCatalogItems(){const seen=new Set();return [...state.seriesRecentItems,...state.seriesPopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function isRetiredStarterTitle(it){return (it?.kind==='movie'||it?.kind==='series')&&(it?.openLicense===true||it?.free===true||it?.sample===true||String(it?.id||'').startsWith('open-')||String(it?.id||'').startsWith('demo-')||String(it?.id||'').startsWith('official-vod-'));}
-function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>x.browserPlayable===true&&!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>!isRetiredStarterTitle(x))];}
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
 function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
@@ -1929,14 +1950,16 @@ function renderCountryOfficialAccess(country){
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
- const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>(it.browserPlayable===true||it.embedType==='youtube')&&!it.featuredVenezuela&&!isRemovedVeChannel(it));
+ const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>
+  (it.browserPlayable===true||it.embedType==='youtube'||/^(Nexonic|Lista pública experimental)/.test(String(it.source||''))||it.source==='manual'||/M3U importada/i.test(String(it.source||'')))
+  &&!it.featuredVenezuela&&!isRemovedVeChannel(it)&&!state.failedStreams.includes(it.id));
  const featured=chosen?.[0]==='ve'?chooseItems(venezuelaFeaturedCards(),{category:state.category,q:state.liveQuery}):[];
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
  const selectedName=chosen?' · '+chosen[1]+' '+chosen[2]:'';
  return pageTitle('TV en vivo',chosen?'Canales gratuitos de '+chosen[2]:'Explora televisión gratuita por país')
  +'<div class="live-control-panel"><div class="live-control-title">📺 TELEVISIÓN GRATIS</div>'
- +'<p>Selecciona un país. Las emisiones que se puedan reproducir aparecerán automáticamente, sin interrumpir la navegación.</p>'
+ +'<p>Selecciona un país para ver sus canales gratuitos. Puedes probar cada señal dentro de NÉVIX; las restricciones del emisor o del navegador pueden impedir reproducir algunas.</p>'
  +'<div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">'+options+'</select></label>'
  +'<button class="btn btn-primary" data-action="load-country">'+(state.loadingCountry?'⌛ Preparando canales…':'↻ Actualizar canales')+'</button>'
  +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países consultados</button></div>'
@@ -1969,6 +1992,7 @@ let privateFamilyCode='';
 let privateStorageReady=false;
 let privateLoadPending=false;
 let privateBatchUploads=[];
+let privateUploadDrafts=[];
 let privateBatchRunning=false;
 let privateBatchRenderAt=0;
 try{privateFamilyCode=sessionStorage.getItem('nevix-family-access')||'';}catch(_){}
@@ -2073,6 +2097,8 @@ function privateAdminSection(){
  +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
  +'<div class="nevix-netflix-panel"><div class="nevix-netflix-panel-head"><div><strong>Mostrar catálogo de Netflix</strong><p class="hint">Interruptor general para todos los dispositivos. No afecta las películas propias ni la TV en vivo.</p></div><label class="nevix-netflix-toggle"><input type="checkbox" id="netflix-catalog-switch" role="switch" aria-label="Activar o desactivar Netflix" '+(netflixCatalogEnabled?'checked ':'')+(!netflixSettingsLoaded||netflixSettingsSaving?'disabled':'')+'><span class="nevix-netflix-track"></span></label></div><p id="netflix-catalog-state" class="hint" aria-live="polite">'+(!netflixSettingsLoaded?'Consultando configuración…':netflixCatalogEnabled?'Netflix activado.':'Netflix desactivado.')+'</p></div>'
  +'<label class="field">Selecciona varias películas (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB por archivo)<input type="file" id="private-film-file" multiple accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*" '+(privateBatchRunning?'disabled':'')+'></label>'
+ +'<div id="private-upload-drafts" style="margin:12px 0" aria-live="polite">'+privateUploadDraftMarkup()+'</div>'
+ +'<p class="hint">Antes de subir, escribe el título de cada película y el año si lo sabes. Puedes buscar su portada en TMDB. Si se corta internet, utiliza Continuar subida; si cierras esta página, vuelve a seleccionar el mismo archivo para recuperar los bloques confirmados mientras la sesión siga activa.</p>'
  +'<div class="actions"><button class="btn btn-primary" type="button" data-action="private-upload" '+(privateBatchRunning?'disabled':'')+'>☁ Subir películas seleccionadas</button><button class="btn" type="button" data-action="private-sync">↻ Revisar nuevas películas</button><button class="btn" type="button" data-action="private-review">✎ Revisar pendientes</button></div>'
  +'<div class="actions" style="margin-top:14px"><button class="btn" type="button" data-action="private-remux-r2">♻ Revisar o preparar video (manual)</button></div>'
  +'<p class="hint">Cada video se revisa automáticamente. NÉVIX conserva el original en R2 y publica un MP4 H.264/AAC compatible: copia sin modificar el video si es posible, o convierte lo necesario. Para AC3/DTS 5.1 prepara audio estéreo y AAC 5.1. Las conversiones grandes dependen de los recursos de Render.</p>'
@@ -2295,12 +2321,76 @@ async function privateApproveAdmin(id){
  }catch(e){toast('No se pudo aprobar: '+e.message);}
 }
 
+
+function privateFilmNameHint(filename){
+ const base=String(filename||'').replace(/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i,'')
+  .replace(/[._]+/g,' ').replace(/\b(?:1080p|2160p|720p|480p|web[- ]?dl|bluray|brrip|x264|x265|hevc|h264|aac|dts)\b/ig,' ')
+  .replace(/\s+/g,' ').trim();
+ const year=(base.match(/\b(?:19|20)\d{2}\b/)||[])[0]||'';
+ const title=base.replace(/\b(?:19|20)\d{2}\b.*$/,'').replace(/[-\s]+$/,'').trim();
+ return {title:(title||base||'Película').slice(0,130),year};
+}
+function privateUploadDraftMarkup(){
+ if(!privateUploadDrafts.length)return '';
+ return '<div class="panel-card" style="padding:12px"><h3 style="margin:0 0 6px">Títulos y portadas antes de subir</h3>'
+ +'<p class="hint">Revisa cada título; NÉVIX lo guardará en R2 y buscará su portada al finalizar la transferencia.</p>'
+ +privateUploadDrafts.map((d,i)=>{
+  const goodPoster=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(d.image||''));
+  return '<div style="border-top:1px solid #414963;padding:12px 0">'
+   +'<b style="display:block;overflow-wrap:anywhere;margin-bottom:6px">'+esc(d.file.name)+'</b>'
+   +'<label class="field">Título real<input type="text" data-upload-draft="title" data-index="'+i+'" maxlength="130" value="'+esc(d.title)+'" placeholder="Nombre de la película"></label>'
+   +'<label class="field">Año (opcional)<input type="text" inputmode="numeric" data-upload-draft="year" data-index="'+i+'" maxlength="4" value="'+esc(d.year)+'" placeholder="Ej.: 2024"></label>'
+   +'<button type="button" class="btn btn-sm" data-action="private-upload-poster" data-id="'+i+'">🎞 Buscar portada</button>'
+   +'<div id="private-upload-draft-poster-'+i+'" class="hint" style="margin-top:8px">'
+   +(goodPoster?'<img src="'+esc(d.image)+'" alt="Portada de '+esc(d.title)+'" loading="lazy" style="width:120px;border-radius:9px;display:block;margin:5px 0">':'')
+   +esc(d.posterMessage||(goodPoster?'Portada encontrada; confirma que corresponda a la película.':'La portada también se buscará automáticamente al finalizar.'))+'</div></div>';
+ }).join('')+'</div>';
+}
+function privatePrepareUploadDrafts(){
+ const picked=Array.from(document.getElementById('private-film-file')?.files||[]);
+ const current=new Map(privateUploadDrafts.map(x=>[privateFileToken(x.file),x]));
+ privateUploadDrafts=picked.map(file=>{
+  const previous=current.get(privateFileToken(file));
+  return previous?{...previous,file}:{file,...privateFilmNameHint(file),image:'',posterMessage:''};
+ });
+ const node=document.getElementById('private-upload-drafts');
+ if(node)node.innerHTML=privateUploadDraftMarkup();
+}
+function privateReadUploadDraftValues(){
+ for(let i=0;i<privateUploadDrafts.length;i++){
+  const d=privateUploadDrafts[i];
+  const title=document.querySelector('[data-upload-draft="title"][data-index="'+i+'"]');
+  const year=document.querySelector('[data-upload-draft="year"][data-index="'+i+'"]');
+  if(title)d.title=title.value.trim();
+  if(year)d.year=year.value.trim();
+ }
+}
+async function privateFindUploadPoster(index){
+ privateReadUploadDraftValues();
+ const d=privateUploadDrafts[Number(index)];
+ if(!d)return;
+ const key=document.getElementById('private-admin-key')?.value?.trim()||'';
+ const node=document.getElementById('private-upload-draft-poster-'+index);
+ if(!key){toast('Introduce el código de administración antes de buscar la portada.');return;}
+ if(d.title.length<2||d.title.length>130||d.year&&!/^(19|20)\d{2}$/.test(d.year)){
+  if(node)node.textContent='Introduce un título correcto y, si lo sabes, el año de estreno.';
+  return;
+ }
+ if(node)node.textContent='Buscando portada en TMDB…';
+ try{
+  const res=await privateRequest('/api/private/upload/metadata-preview',key,true,'POST',{title:d.title,year:d.year});
+  if(res.found&&/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(res.image||''))){
+   d.image=res.image;d.posterMessage='Coincidencia: '+String(res.matchedTitle||d.title)+(res.matchedYear?' ('+res.matchedYear+')':'')+'. Confirma que sea la portada correcta.';
+  }else{d.image='';d.posterMessage='No hay portada exacta. La película se guardará para revisarla desde Administración.';}
+ }catch(e){d.image='';d.posterMessage='No se pudo buscar la portada: '+String(e.message||'error')+'. La película se podrá subir igualmente.';}
+ if(node){const img=d.image?'<img src="'+esc(d.image)+'" alt="Portada encontrada" loading="lazy" style="width:120px;max-width:100%;border-radius:9px;display:block;margin:5px 0">':'';node.innerHTML=img+esc(d.posterMessage);}
+}
 const NEVIX_UPLOAD_SESSION_KEY='nevix-r2-mp4-session-v2'; // Sesiones anteriores compatibles
 const NEVIX_MULTI_UPLOAD_SESSION_KEY='nevix-r2-multi-sessions-v1';
 function privateFileToken(file){return [file.name,file.size,Number(file.lastModified)||0].join('::');}
 function privateUploadSessions(){
  try{
-  const obj=JSON.parse(sessionStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||'{}');
+  const obj=JSON.parse(sessionStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||localStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||'{}');
   if(!obj||typeof obj!=='object'||Array.isArray(obj))return {};
   return Object.fromEntries(Object.entries(obj).filter(([k,x])=>k.length<300&&x&&/^[a-f0-9-]{36}$/i.test(String(x.id||''))&&Date.now()-Number(x.at)<12600000).slice(-80));
  }catch(_){return {};}
@@ -2318,12 +2408,12 @@ function privateStoredUpload(file,legacy=false){
 function privateSaveUpload(file,id){
  const obj=privateUploadSessions();
  obj[privateFileToken(file)]={id,fileName:file.name,fileSize:file.size,at:Date.now()};
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
  try{const old=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');if(old?.id===id)sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);}catch(_){}
 }
 function privateClearUpload(file){
  const obj=privateUploadSessions();delete obj[privateFileToken(file)];
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
  try{const old=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');if(old?.fileName===file.name&&Number(old?.fileSize)===file.size)sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);}catch(_){}
 }
 
@@ -2342,9 +2432,11 @@ function privateUploadBatchMarkup(){
     controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'">✕ Cancelar subida</button>';
    if((waiting||row.phase==='cancelPending')&&row.cancelRequested)
     controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'" '+(waiting?'disabled':'')+'>'+(waiting?'Cancelando…':'↻ Reintentar cancelación')+'</button>';
+   if(row.phase==='failed')controls+='<button class="btn btn-sm btn-primary" type="button" data-action="private-retry-upload" data-id="'+id+'" '+(privateBatchRunning||row.retrying?'disabled':'')+'>↻ Continuar subida</button>';
    if(removable)
     controls+='<button class="btn btn-sm" type="button" data-action="private-remove-upload" data-id="'+id+'">'+(row.phase==='uploading'||row.phase==='queued'||row.phase==='cancelPending'||row.phase==='failed'&&Boolean(row.sessionId)?'✕ Cancelar y quitar':'Eliminar de la lista')+'</button>';
-   return '<div style="padding:10px 0;border-bottom:1px solid #50313b"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">'+esc(row.name)+'</b><b>'+pct+' %</b></div>'
+   return '<div style="padding:10px 0;border-bottom:1px solid #50313b"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">'+esc(row.title||row.name)+'</b><b>'+pct+' %</b></div>'
+    +(row.title?'<div class="hint">'+esc(row.name)+'</div>':'')
     +'<div class="hint" style="margin:4px 0">'+esc(labels[row.phase]||'Pendiente')+' · '+(Number(row.size)/1048576).toFixed(1)+' MiB</div>'
     +'<progress value="'+pct+'" max="100" style="width:100%;height:10px;accent-color:'+(row.phase==='cancelled'?'#879397':'#ef1d3c')+'"></progress>'
     +'<div class="hint" style="overflow-wrap:anywhere">'+esc(row.detail||'Esperando turno')+'</div>'
@@ -2458,7 +2550,7 @@ async function privateWatchAutomaticMovie(key,started,onUpdate){
 function privateForgetUploadRow(row){
  const sessions=privateUploadSessions();
  if(row.token)delete sessions[row.token];
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));}catch(_){}
  try{
   const legacy=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');
   if(legacy?.fileName===row.name&&Number(legacy?.fileSize)===Number(row.size))
@@ -2560,12 +2652,18 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
     const progress=await privateRequest('/api/private/upload/progress?id='+encodeURIComponent(previous.id),key,true);
     if(progress?.uploadId===previous.id&&progress.name===file.name&&Number(progress.size)===file.size){
      upload={uploadId:progress.uploadId,chunkSize:progress.chunkSize,chunks:progress.chunks};
+     if(progress.title)row.title=progress.title;
+     if(progress.year)row.year=progress.year;
      received=new Set((progress.receivedParts||[]).map(Number).filter(Number.isSafeInteger));
-    }else privateClearUpload(file);
-   }catch(_){privateClearUpload(file);}
+     privateUpdateUploadRow(row,'Se recuperaron '+received.size+' bloques de esta subida.',Math.min(99,Math.floor(received.size*Number(upload.chunkSize)/file.size*100)),'uploading');
+    }else{privateClearUpload(file);toast('La sesión anterior ya no está disponible. Esta película se subirá desde cero.');}
+   }catch(_){privateClearUpload(file);toast('No se pudo continuar la sesión anterior. Se intentará una subida nueva desde cero.');}
   }
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
-  if(!upload)upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size});
+  if(!upload){
+   privateUpdateUploadRow(row,'Iniciando una nueva subida desde cero…',0,'uploading');
+   upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||''});
+  }
   sessionId=String(upload.uploadId||'');row.sessionId=sessionId;row.waitingStart=false;
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
   const size=Number(upload.chunkSize),total=Number(upload.chunks);
@@ -2612,17 +2710,41 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   row.waitingStart=false;
   if(row.cancelRequested)await privateFinalizeCancelledUpload(row);
   else privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
- }finally{row.waitingStart=false;row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
+ }finally{row.waitingStart=false;if(row.phase!=='failed')row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
+}
+async function privateRetryUpload(id){
+ const row=privateBatchUploads.find(x=>x.id===String(id||''));
+ if(!row||row.phase!=='failed'||row.cancelRequested)return;
+ if(privateBatchRunning)return toast('Espera a que finalice el lote actual antes de continuar otra subida.');
+ if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para reanudar los bloques que todavía estén guardados.');
+ const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
+ if(!key)return toast('Introduce el código de administración del servidor.');
+ privateBatchRunning=true;row.retrying=true;
+ privateUpdateUploadRow(row,'Consultando los bloques existentes antes de continuar…',row.percent,'queued');
+ const inp=document.getElementById('private-film-file');if(inp)inp.disabled=true;
+ const btn=document.querySelector('[data-action="private-upload"]');if(btn)btn.disabled=true;
+ try{await privateUploadOneFilm(row.file,key,row,true);}
+ finally{
+  row.retrying=false;privateBatchRunning=false;
+  const fileInput=document.getElementById('private-film-file');if(fileInput)fileInput.disabled=false;
+  const button=document.querySelector('[data-action="private-upload"]');if(button)button.disabled=false;
+  privateRenderUploadBatch(true);
+ }
 }
 async function privateUploadAdmin(){
  if(privateBatchRunning)return;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- const input=document.getElementById('private-film-file'),picked=Array.from(input?.files||[]);
+ const input=document.getElementById('private-film-file'),picked=privateUploadDrafts.length?privateUploadDrafts.map(x=>x.file):Array.from(input?.files||[]);
  if(!key){toast('Introduce tu código de administración.');return;}
  if(!picked.length){toast('Selecciona una o varias películas.');return;}
+ privateReadUploadDraftValues();
+ const drafts=new Map(privateUploadDrafts.map(x=>[privateFileToken(x.file),x]));
  const seen=new Set(),files=picked.filter(f=>{const token=privateFileToken(f);if(seen.has(token))return false;seen.add(token);return true;});
+ const bad=files.map(file=>drafts.get(privateFileToken(file))||privateFilmNameHint(file))
+  .find(x=>String(x.title||'').trim().length<2||String(x.title||'').trim().length>130||x.year&&!/^(19|20)\d{2}$/.test(String(x.year)));
+ if(bad){toast('Revisa el título y año de cada película antes de subirla.');return;}
  const rows=files.map((file,i)=>({
-  id:String(Date.now())+'-'+i,name:file.name,size:file.size,file,token:privateFileToken(file),sessionId:'',uploadKey:key,percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
+  id:String(Date.now())+'-'+i,name:file.name,title:String((drafts.get(privateFileToken(file))||privateFilmNameHint(file)).title||'').trim(),year:String((drafts.get(privateFileToken(file))||privateFilmNameHint(file)).year||''),size:file.size,file,token:privateFileToken(file),sessionId:'',uploadKey:key,percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
   phase:/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(file.name)&&file.size>0&&file.size<5*1024*1024*1024?'queued':'failed',
   detail:'Esperando turno de transferencia'
  }));
@@ -2656,6 +2778,8 @@ async function privateUploadAdmin(){
   if(btn)btn.disabled=false;
   const inp=document.getElementById('private-film-file');
   if(inp){inp.disabled=false;inp.value='';}
+  privateUploadDrafts=[];
+  const draftNode=document.getElementById('private-upload-drafts');if(draftNode)draftNode.innerHTML='';
   privateRenderUploadBatch(true);
  }
 }
@@ -3404,13 +3528,21 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
   case 'private-cancel-upload':void privateCancelUploadRow(id,false);break;case 'private-remove-upload':void privateCancelUploadRow(id,true);break;
   case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
-document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
-document.addEventListener('input',e=>{if(e.target.id==='live-search'){const pos=e.target.selectionStart;state.liveQuery=e.target.value;state.liveShown=100;render();const inp=$('#live-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='movie-search'){const pos=e.target.selectionStart;state.movieQuery=e.target.value;render();const inp=$('#movie-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='series-search'){const pos=e.target.selectionStart;state.seriesQuery=e.target.value;render();const inp=$('#series-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='global-search'){const pos=e.target.selectionStart;state.search=e.target.value;const grid=$('#main .tile-grid');const result=chooseItems(allItems(),{q:state.search});const heading=$('#main .section-head h2');if(heading)heading.textContent=state.search?`${result.length} resultado(s)`:'Todo el contenido';if(grid)grid.innerHTML=seriesOnce(result.filter(x=>x.kind==='series')).concat(result.filter(x=>x.kind!=='series')).map(x=>card(x,true)).join('');else if(result.length){render({focusSearch:true});const inp=$('#global-search');inp?.setSelectionRange(pos,pos);}}});
+document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='private-film-file'){privatePrepareUploadDrafts();return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
+document.addEventListener('input',e=>{if(e.target.dataset?.uploadDraft){
+ const i=Number(e.target.dataset.index),d=privateUploadDrafts[i],field=e.target.dataset.uploadDraft;
+ if(d&&(field==='title'||field==='year')){
+  const value=e.target.value.trim();
+  if(d[field]!==value){d[field]=value;d.image='';d.posterMessage='La portada se volverá a buscar con el nuevo título y año.';
+   const preview=document.getElementById('private-upload-draft-poster-'+i);if(preview)preview.textContent=d.posterMessage;}
+ }
+ return;
+}if(e.target.id==='live-search'){const pos=e.target.selectionStart;state.liveQuery=e.target.value;state.liveShown=100;render();const inp=$('#live-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='movie-search'){const pos=e.target.selectionStart;state.movieQuery=e.target.value;render();const inp=$('#movie-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='series-search'){const pos=e.target.selectionStart;state.seriesQuery=e.target.value;render();const inp=$('#series-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='global-search'){const pos=e.target.selectionStart;state.search=e.target.value;const grid=$('#main .tile-grid');const result=chooseItems(allItems(),{q:state.search});const heading=$('#main .section-head h2');if(heading)heading.textContent=state.search?`${result.length} resultado(s)`:'Todo el contenido';if(grid)grid.innerHTML=seriesOnce(result.filter(x=>x.kind==='series')).concat(result.filter(x=>x.kind!=='series')).map(x=>card(x,true)).join('');else if(result.length){render({focusSearch:true});const inp=$('#global-search');inp?.setSelectionRange(pos,pos);}}});
 document.addEventListener('keydown',e=>{if((e.key==='Escape'||e.key==='Backspace')&&document.querySelector('.cinema-preview.nevix-preview-expanded')){e.preventDefault();document.querySelector('.cinema-preview.nevix-preview-expanded')?.classList.remove('nevix-preview-expanded');document.documentElement.classList.remove('nevix-theater-lock');document.body.classList.remove('nevix-theater-lock');return;}if(e.key==='Escape'||e.key==='Backspace'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){if(els.player.innerHTML){const s=document.querySelector('#player-root .player-shell');if(s&&(s.classList.contains('nevix-expanded')||document.fullscreenElement===s||document.webkitFullscreenElement===s)){e.preventDefault();exitPlayerFullscreen();return;}closePlayer();return;}if(els.modal.innerHTML){closeDetail();return;}$('#sidebar').classList.remove('open');}if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key) && !['INPUT','TEXTAREA','SELECT','VIDEO'].includes(document.activeElement?.tagName)&&!els.player.innerHTML){const focusables=[...document.querySelectorAll('button:not(:disabled),a[href]')].filter(el=>el.getBoundingClientRect().width>0);if(focusables.length){let i=focusables.indexOf(document.activeElement);if(i<0)return;let step=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;let next=focusables[(i+step+focusables.length)%focusables.length];if(next){e.preventDefault();next.focus({preventScroll:false});}}}});
 window.addEventListener('hashchange',()=>{const requested=location.hash.slice(1);if(requested==='netflix'||requested==='free'){go('movie');return;}if(NAMES[requested]&&requested!==state.view){state.view=requested;state.category='Todos';state.search='';render();if(requested==='movie'&&!state.movieAttempted)void loadWatchmodeCatalog();if(requested==='series'&&!state.seriesAttempted)void loadWatchmodeSeries();}});
 
