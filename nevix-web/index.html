@@ -2508,12 +2508,12 @@ async function privateCancelUploadRow(id,removeAfter=false){
   toast('La película se está confirmando en R2. Comprueba primero si terminó; no se borrará una película ya guardada.');
   return;
  }
- if(removeAfter)row.removeAfterCancel=true;
  if(row.phase==='cancelled'){
   if(removeAfter)privateDropUploadRow(row);
   return;
  }
  if(row.phase==='failed'&&!row.sessionId&&!row.waitingStart){
+  if(removeAfter)row.removeAfterCancel=true;
   privateForgetUploadRow(row);
   row.cancelRequested=true;row.file=null;
   privateUpdateUploadRow(row,'Subida retirada. No queda una sesión activa en esta página.',row.percent,'cancelled');
@@ -2521,6 +2521,7 @@ async function privateCancelUploadRow(id,removeAfter=false){
   return;
  }
  if(!row.cancelRequested&&!confirm('¿Cancelar la subida de «'+row.name+'»? Solo se detendrá este archivo; las otras películas seguirán subiendo.'))return;
+ if(removeAfter)row.removeAfterCancel=true;
  row.cancelRequested=true;
  if(row.phase==='queued'){
   privateForgetUploadRow(row);
