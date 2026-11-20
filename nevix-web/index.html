@@ -1994,6 +1994,8 @@ let privateLoadPending=false;
 let privateBatchUploads=[];
 let privateUploadDrafts=[];
 let privateBatchRunning=false;
+let privateUploadAuthPending=false;
+let privateAdminKeyMemory='';
 let privateBatchRenderAt=0;
 try{privateFamilyCode=sessionStorage.getItem('nevix-family-access')||'';}catch(_){}
 function privateFilmRail(){
@@ -2094,7 +2096,8 @@ function privateAdminSection(){
  return '<section class="panel-card" style="margin-top:24px"><h2>☁ Servidor privado de películas</h2>'
  +'<p>Las películas subidas aparecerán automáticamente en Películas tras identificar su portada. Los espectadores no verán ninguna sección de biblioteca privada.</p>'
  +'<p class="hint" id="private-storage-readiness">'+(privateStorageReady?'Cloudflare R2 está conectado y permite subir MP4.':'Para activarlo configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY y los códigos NEVIX_FAMILY_ACCESS_CODE y NEVIX_PRIVATE_ADMIN_KEY en Render.')+'</p>'
- +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off"></label>'
+ +'<label class="field">Código de administración del servidor<input type="password" id="private-admin-key" placeholder="Código privado configurado en Render" autocomplete="off" value="'+esc(privateAdminKeyMemory)+'"></label>'
+ +'<p class="hint">Para subir películas utiliza el código de <b>administración</b> configurado en Render, distinto del acceso familiar. NÉVIX comprobará el código antes de iniciar cualquier subida.</p>'
  +'<div class="nevix-netflix-panel"><div class="nevix-netflix-panel-head"><div><strong>Mostrar catálogo de Netflix</strong><p class="hint">Interruptor general para todos los dispositivos. No afecta las películas propias ni la TV en vivo.</p></div><label class="nevix-netflix-toggle"><input type="checkbox" id="netflix-catalog-switch" role="switch" aria-label="Activar o desactivar Netflix" '+(netflixCatalogEnabled?'checked ':'')+(!netflixSettingsLoaded||netflixSettingsSaving?'disabled':'')+'><span class="nevix-netflix-track"></span></label></div><p id="netflix-catalog-state" class="hint" aria-live="polite">'+(!netflixSettingsLoaded?'Consultando configuración…':netflixCatalogEnabled?'Netflix activado.':'Netflix desactivado.')+'</p></div>'
  +'<label class="field">Selecciona varias películas (MP4, MKV, AVI, MOV, M4V, WEBM, WMV, MPEG, TS o M2TS; hasta 5 GiB por archivo)<input type="file" id="private-film-file" multiple accept=".mp4,.m4v,.mkv,.avi,.mov,.webm,.wmv,.mpeg,.mpg,.ts,.m2ts,video/*" '+''+'></label>'
  +'<div id="private-upload-drafts" style="margin:12px 0" aria-live="polite">'+privateUploadDraftMarkup()+'</div>'
@@ -2735,12 +2738,32 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   else privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
  }finally{row.waitingStart=false;if(row.phase!=='failed')row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
 }
-function privateRetryUpload(id){
+async function privateVerifyUploadKey(key){
+ try{
+  await privateRequest('/api/private/admin/catalog',key,true);
+  const hint=document.getElementById('private-upload-status');
+  if(hint&&hint.textContent.includes('Código de administrador'))hint.textContent='';
+  return true;
+ }catch(error){
+  const message=String(error?.message||'No se pudo comprobar el código.');
+  const rejected=/incorrect|administraci[oó]n|access_denied|access denied|HTTP 401|HTTP 403|sin permisos/i.test(message);
+  const detail=rejected
+   ?'Código de administrador rechazado por Render (HTTP 401/403). Escribe el código de administración correcto, no el código familiar. Los archivos continúan seleccionados.'
+   :'No pudimos validar el acceso de administrador: '+message+'. No se inició ninguna subida; los archivos continúan seleccionados.';
+  const hint=document.getElementById('private-upload-status');
+  if(hint)hint.textContent=detail;
+  toast(detail);
+  return false;
+ }
+}
+async function privateRetryUpload(id){
  const row=privateBatchUploads.find(x=>x.id===String(id||''));
  if(!row||row.phase!=='failed'||row.cancelRequested)return;
  if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para recuperar sus bloques confirmados.');
  const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
  if(!key)return toast('Introduce el código de administración.');
+ privateAdminKeyMemory=key;
+ if(!await privateVerifyUploadKey(key))return;
  row.uploadKey=key;row.retrying=true;row.allowLegacy=true;
  privateUpdateUploadRow(row,'En cola para recuperar los bloques anteriores…',row.percent,'queued');
  void privateDrainUploadQueue();
@@ -2778,14 +2801,23 @@ async function privateDrainUploadQueue(){
    void privateDrainUploadQueue();
  }
 }
-function privateUploadAdmin(){
+async function privateUploadAdmin(){
+ if(privateUploadAuthPending)return;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- if(!key){toast('Introduce tu código de administración.');return;}
+ if(!key){toast('Introduce tu código de administración (no el acceso familiar).');return;}
+ privateAdminKeyMemory=key;
  privateReadUploadDraftValues();
  const drafts=privateUploadDrafts.slice();
  if(!drafts.length){toast('Selecciona una o varias películas.');return;}
  const invalid=drafts.find(d=>String(d.title||'').trim().length<2||String(d.title||'').trim().length>130||d.year&&!/^(19|20)\d{2}$/.test(String(d.year)));
  if(invalid){toast('Revisa el título y año de cada película antes de subirla.');return;}
+ // Reject a bad admin key before placing files in the background queue.
+ // This preserves the file selection and avoids misleading Interrumpida 0%.
+ privateUploadAuthPending=true;
+ let authorized=false;
+ try{authorized=await privateVerifyUploadKey(key);}
+ finally{privateUploadAuthPending=false;}
+ if(!authorized)return;
  const currentlyQueued=new Set(privateBatchUploads.filter(r=>['queued','uploading','finalizing','processing'].includes(r.phase)&&!r.cancelRequested&&!r.removed).map(r=>r.token));
  const included=new Set();
  const selected=drafts.filter(d=>{
@@ -3564,7 +3596,7 @@ document.addEventListener('click',async e=>{const target=e.target.closest('[data
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='private-film-file'){privatePrepareUploadDrafts();return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
-document.addEventListener('input',e=>{if(e.target.dataset?.uploadDraft){
+document.addEventListener('input',e=>{if(e.target.id==='private-admin-key'){privateAdminKeyMemory=e.target.value;return;}if(e.target.dataset?.uploadDraft){
  const i=Number(e.target.dataset.index),d=privateUploadDrafts[i],field=e.target.dataset.uploadDraft;
  if(d&&(field==='title'||field==='year')){
   const value=e.target.value.trim();
