@@ -2378,7 +2378,7 @@ const NEVIX_MULTI_UPLOAD_SESSION_KEY='nevix-r2-multi-sessions-v1';
 function privateFileToken(file){return [file.name,file.size,Number(file.lastModified)||0].join('::');}
 function privateUploadSessions(){
  try{
-  const obj=JSON.parse(sessionStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||'{}');
+  const obj=JSON.parse(sessionStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||localStorage.getItem(NEVIX_MULTI_UPLOAD_SESSION_KEY)||'{}');
   if(!obj||typeof obj!=='object'||Array.isArray(obj))return {};
   return Object.fromEntries(Object.entries(obj).filter(([k,x])=>k.length<300&&x&&/^[a-f0-9-]{36}$/i.test(String(x.id||''))&&Date.now()-Number(x.at)<12600000).slice(-80));
  }catch(_){return {};}
@@ -2396,12 +2396,12 @@ function privateStoredUpload(file,legacy=false){
 function privateSaveUpload(file,id){
  const obj=privateUploadSessions();
  obj[privateFileToken(file)]={id,fileName:file.name,fileSize:file.size,at:Date.now()};
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
  try{const old=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');if(old?.id===id)sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);}catch(_){}
 }
 function privateClearUpload(file){
  const obj=privateUploadSessions();delete obj[privateFileToken(file)];
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(obj));}catch(_){}
  try{const old=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');if(old?.fileName===file.name&&Number(old?.fileSize)===file.size)sessionStorage.removeItem(NEVIX_UPLOAD_SESSION_KEY);}catch(_){}
 }
 
@@ -2420,9 +2420,11 @@ function privateUploadBatchMarkup(){
     controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'">✕ Cancelar subida</button>';
    if((waiting||row.phase==='cancelPending')&&row.cancelRequested)
     controls+='<button class="btn btn-sm" type="button" data-action="private-cancel-upload" data-id="'+id+'" '+(waiting?'disabled':'')+'>'+(waiting?'Cancelando…':'↻ Reintentar cancelación')+'</button>';
+   if(row.phase==='failed')controls+='<button class="btn btn-sm btn-primary" type="button" data-action="private-retry-upload" data-id="'+id+'" '+(privateBatchRunning||row.retrying?'disabled':'')+'>↻ Continuar subida</button>';
    if(removable)
     controls+='<button class="btn btn-sm" type="button" data-action="private-remove-upload" data-id="'+id+'">'+(row.phase==='uploading'||row.phase==='queued'||row.phase==='cancelPending'||row.phase==='failed'&&Boolean(row.sessionId)?'✕ Cancelar y quitar':'Eliminar de la lista')+'</button>';
-   return '<div style="padding:10px 0;border-bottom:1px solid #50313b"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">'+esc(row.name)+'</b><b>'+pct+' %</b></div>'
+   return '<div style="padding:10px 0;border-bottom:1px solid #50313b"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">'+esc(row.title||row.name)+'</b><b>'+pct+' %</b></div>'
+    +(row.title?'<div class="hint">'+esc(row.name)+'</div>':'')
     +'<div class="hint" style="margin:4px 0">'+esc(labels[row.phase]||'Pendiente')+' · '+(Number(row.size)/1048576).toFixed(1)+' MiB</div>'
     +'<progress value="'+pct+'" max="100" style="width:100%;height:10px;accent-color:'+(row.phase==='cancelled'?'#879397':'#ef1d3c')+'"></progress>'
     +'<div class="hint" style="overflow-wrap:anywhere">'+esc(row.detail||'Esperando turno')+'</div>'
@@ -2536,7 +2538,7 @@ async function privateWatchAutomaticMovie(key,started,onUpdate){
 function privateForgetUploadRow(row){
  const sessions=privateUploadSessions();
  if(row.token)delete sessions[row.token];
- try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));}catch(_){}
+ try{sessionStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));localStorage.setItem(NEVIX_MULTI_UPLOAD_SESSION_KEY,JSON.stringify(sessions));}catch(_){}
  try{
   const legacy=JSON.parse(sessionStorage.getItem(NEVIX_UPLOAD_SESSION_KEY)||'null');
   if(legacy?.fileName===row.name&&Number(legacy?.fileSize)===Number(row.size))
@@ -2638,12 +2640,18 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
     const progress=await privateRequest('/api/private/upload/progress?id='+encodeURIComponent(previous.id),key,true);
     if(progress?.uploadId===previous.id&&progress.name===file.name&&Number(progress.size)===file.size){
      upload={uploadId:progress.uploadId,chunkSize:progress.chunkSize,chunks:progress.chunks};
+     if(progress.title)row.title=progress.title;
+     if(progress.year)row.year=progress.year;
      received=new Set((progress.receivedParts||[]).map(Number).filter(Number.isSafeInteger));
-    }else privateClearUpload(file);
-   }catch(_){privateClearUpload(file);}
+     privateUpdateUploadRow(row,'Se recuperaron '+received.size+' bloques de esta subida.',Math.min(99,Math.floor(received.size*Number(upload.chunkSize)/file.size*100)),'uploading');
+    }else{privateClearUpload(file);toast('La sesión anterior ya no está disponible. Esta película se subirá desde cero.');}
+   }catch(_){privateClearUpload(file);toast('No se pudo continuar la sesión anterior. Se intentará una subida nueva desde cero.');}
   }
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
-  if(!upload)upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size});
+  if(!upload){
+   privateUpdateUploadRow(row,'Iniciando una nueva subida desde cero…',0,'uploading');
+   upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||''});
+  }
   sessionId=String(upload.uploadId||'');row.sessionId=sessionId;row.waitingStart=false;
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
   const size=Number(upload.chunkSize),total=Number(upload.chunks);
@@ -2690,7 +2698,26 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   row.waitingStart=false;
   if(row.cancelRequested)await privateFinalizeCancelledUpload(row);
   else privateUpdateUploadRow(row,'Subida interrumpida: '+String(e?.message||'Error.')+(sessionId?' Vuelve a seleccionar este archivo para reanudar sus bloques.':''),row.percent,'failed');
- }finally{row.waitingStart=false;row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
+ }finally{row.waitingStart=false;if(row.phase!=='failed')row.file=null;row.xhr=null;privateRenderUploadBatch(true);}
+}
+async function privateRetryUpload(id){
+ const row=privateBatchUploads.find(x=>x.id===String(id||''));
+ if(!row||row.phase!=='failed'||row.cancelRequested)return;
+ if(privateBatchRunning)return toast('Espera a que finalice el lote actual antes de continuar otra subida.');
+ if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para reanudar los bloques que todavía estén guardados.');
+ const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
+ if(!key)return toast('Introduce el código de administración del servidor.');
+ privateBatchRunning=true;row.retrying=true;
+ privateUpdateUploadRow(row,'Consultando los bloques existentes antes de continuar…',row.percent,'queued');
+ const inp=document.getElementById('private-film-file');if(inp)inp.disabled=true;
+ const btn=document.querySelector('[data-action="private-upload"]');if(btn)btn.disabled=true;
+ try{await privateUploadOneFilm(row.file,key,row,true);}
+ finally{
+  row.retrying=false;privateBatchRunning=false;
+  const fileInput=document.getElementById('private-film-file');if(fileInput)fileInput.disabled=false;
+  const button=document.querySelector('[data-action="private-upload"]');if(button)button.disabled=false;
+  privateRenderUploadBatch(true);
+ }
 }
 async function privateUploadAdmin(){
  if(privateBatchRunning)return;
