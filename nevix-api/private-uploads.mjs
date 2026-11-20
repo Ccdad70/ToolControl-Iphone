@@ -27,6 +27,18 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    return {status:200,data:{ok:true,cancelled:true}};
   }catch(error){
    if(error?.name==='NoSuchUpload'||error?.name==='NoSuchKey'||Number(error?.$metadata?.httpStatusCode)===404){
+    // NoSuchUpload also occurs when R2 already assembled the complete movie.
+    // Never report deletion without verifying that no published object exists.
+    try{
+     const object=await client.send(new HeadObjectCommand({Bucket:bucket,Key:s.key}));
+     if(Number(object.ContentLength)>0){
+      active.delete(id);
+      return {status:409,data:{error:'movie_already_stored',message:'La película ya fue guardada. Si deseas borrarla utiliza el administrador de películas de R2.'}};
+     }
+    }catch(headError){
+     if(headError?.name!=='NoSuchKey'&&headError?.name!=='NotFound'&&Number(headError?.$metadata?.httpStatusCode)!==404)
+      return {status:502,data:{error:'cancel_not_confirmed',message:'No fue posible verificar la cancelación en R2.'}};
+    }
     active.delete(id);cancelled.set(id,Date.now());
     return {status:200,data:{ok:true,cancelled:true}};
    }
