@@ -142,5 +142,5 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    return true;
   }
  }
- return {handle,chunkSize:CHUNK_SIZE};
+ return {handle,chunkSize:CHUNK_SIZE,activeCount:()=>active.size};
 }
