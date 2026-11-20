@@ -95,11 +95,12 @@ async function multipartFile(client,bucket,storageOps,key,path,size,onProgress){
  }finally{await fd.close();}
 }
 const statusOf=job=>({jobId:job.jobId,phase:job.phase,percent:job.percent,completed:job.phase==='completed',failed:job.phase==='failed',message:job.message,ready:job.phase==='completed'});
+
 async function probe(path){
  return new Promise((resolve,reject)=>{
   execFile(FFPROBE_BIN,['-v','error','-show_entries',
-   'format=duration,format_name:stream=index,codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile:stream_disposition=attached_pic',
-   '-of','json',path],{timeout:90000,maxBuffer:512*1024},(err,out)=>{
+   'format=duration,format_name:stream=index,codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile:stream_tags=language,title,handler_name:stream_disposition=attached_pic,default',
+   '-of','json',path],{timeout:90000,maxBuffer:1024*1024},(err,out)=>{
    if(err)return reject(Error('FFprobe no pudo analizar el contenedor. Comprueba que el archivo de video no esté dañado.'));
    try{resolve(JSON.parse(out));}catch(_){reject(Error('FFprobe devolvió datos multimedia inválidos.'));}
   });
@@ -112,35 +113,49 @@ const compatibleH264=p=>{
  const v=firstVideo(p);
  return v?.codec_name==='h264'&&['yuv420p','yuvj420p'].includes(String(v.pix_fmt||'').toLowerCase());
 };
+const languageOf=x=>{
+ const lang=String(x.tags?.language||'').trim().toLowerCase();
+ const name=String(x.tags?.title||x.tags?.handler_name||'').toLowerCase();
+ if(/^(spa|es|es-)/.test(lang)||/espa[nñ]ol|spanish|latino|castellano/.test(name))return 'spa';
+ if(/^(eng|en|en-)/.test(lang)||/\benglish\b|ingl[eé]s/.test(name))return 'eng';
+ if(/^(por|pt|pt-)/.test(lang))return 'por';
+ if(/^(fra|fre|fr|fr-)/.test(lang))return 'fra';
+ return /^[a-z]{3}$/.test(lang)?lang:'und';
+};
 function conversionPlan(before,filename,layout){
- const video=firstVideo(before),audio=firstAudio(before);
+ const video=firstVideo(before);
  if(!video)throw Error('El archivo no contiene una pista de video reconocible.');
  const videoCopy=compatibleH264(before);
- const hasAudio=Boolean(audio);
- const channels=Number(audio?.channels)||0;
- const stereoCopy=hasAudio&&audio.codec_name==='aac'&&channels>0&&channels<=2;
- const surround=hasAudio&&channels>=6;
- const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||hasAudio&&(!stereoCopy||surround);
- return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels,videoIndex:video.index,audioIndex:audio?.index??null};
+ const sounds=(before.streams||[]).filter(x=>x.codec_type==='audio');
+ if(sounds.length>16)throw Error('Esta película contiene más de 16 pistas. Se necesita revisión manual para conservarlas todas.');
+ const preferred=sounds.find(x=>languageOf(x)==='spa')||sounds.find(x=>Number(x.disposition?.default)===1)||sounds[0];
+ const ordered=preferred?[preferred,...sounds.filter(x=>x.index!==preferred.index)]:[];
+ const audioTracks=ordered.map(x=>({
+  index:Number(x.index),codec:String(x.codec_name||''),channels:Number(x.channels)||0,
+  language:languageOf(x),title:String(x.tags?.title||'').slice(0,80),
+  sourceDefault:Number(x.disposition?.default)===1
+ }));
+ const hasAudio=Boolean(audioTracks.length);
+ const incompatible=audioTracks.some(x=>x.codec!=='aac'||x.channels>2||x.channels<1);
+ const changeDefault=Boolean(preferred&&sounds[0]&&preferred.index!==sounds[0].index);
+ const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||incompatible||changeDefault;
+ return {videoCopy,hasAudio,needsConversion,audioTracks,videoIndex:video.index,
+  sourceVideo:video.codec_name,sourceAudio:audioTracks[0]?.codec||'sin audio',sourceChannels:audioTracks[0]?.channels||0};
 }
 async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
  const args=['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-threads','1','-i',input,
   '-map','0:'+plan.videoIndex];
- if(plan.hasAudio){
-  args.push('-map','0:'+plan.audioIndex);
-  if(plan.surround)args.push('-map','0:'+plan.audioIndex);
- }
+
+ for(const track of plan.audioTracks)args.push('-map','0:'+track.index);
  if(plan.videoCopy)args.push('-c:v:0','copy');
  else args.push('-c:v:0','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-threads:v:0','1');
- if(plan.hasAudio){
-  if(plan.stereoCopy)args.push('-c:a:0','copy');
-  else args.push('-c:a:0','aac','-ac:a:0','2','-b:a:0','192k');
-  args.push('-metadata:s:a:0','title=Estéreo compatible','-disposition:a:0','default');
-  if(plan.surround){
-   if(plan.sourceAudio==='aac'&&plan.sourceChannels===6)args.push('-c:a:1','copy');
-   else args.push('-c:a:1','aac','-ac:a:1','6','-b:a:1','384k');
-   args.push('-metadata:s:a:1','title=Envolvente 5.1','-disposition:a:1','0');
-  }
+ for(let i=0;i<plan.audioTracks.length;i++){
+  const track=plan.audioTracks[i];
+  if(track.codec==='aac'&&track.channels>0&&track.channels<=2)args.push('-c:a:'+i,'copy');
+  else args.push('-c:a:'+i,'aac','-ac:a:'+i,'2','-b:a:'+i,'192k');
+  args.push('-metadata:s:a:'+i,'language='+track.language,
+   '-metadata:s:a:'+i,'title='+(track.title||('Audio '+(i+1))),
+   '-disposition:a:'+i,(i===0?'default':'0'));
  }
  args.push('-max_muxing_queue_size','2048','-movflags','+faststart','-f','mp4',output);
  await new Promise((resolve,reject)=>{
@@ -173,11 +188,13 @@ function validateMedia(before,after,plan){
  const originalVideo=firstVideo(before),outputVideo=firstVideo(after);
  if(!originalVideo||!outputVideo||outputVideo.codec_name!=='h264'||!['yuv420p','yuvj420p'].includes(String(outputVideo.pix_fmt||'').toLowerCase()))return false;
  if(originalVideo.width!==outputVideo.width||originalVideo.height!==outputVideo.height)return false;
+
  const audio=(after.streams||[]).filter(x=>x.codec_type==='audio');
- if(plan.hasAudio){
-  if(!audio.length||audio[0].codec_name!=='aac'||Number(audio[0].channels)>2)return false;
-  if(plan.surround&&(!audio[1]||audio[1].codec_name!=='aac'||Number(audio[1].channels)!==6))return false;
- }else if(audio.length)return false;
+ if(audio.length!==plan.audioTracks.length)return false;
+ for(let i=0;i<plan.audioTracks.length;i++){
+  if(audio[i].codec_name!=='aac'||Number(audio[i].channels)>2||Number(audio[i].channels)<1)return false;
+  if(plan.audioTracks[i].language!=='und'&&languageOf(audio[i])!==plan.audioTracks[i].language)return false;
+ }
  const beforeSeconds=movieDuration(before),afterSeconds=movieDuration(after);
  if(!Number.isFinite(afterSeconds)||afterSeconds<=2)return false;
  return !(beforeSeconds>2&&Math.abs(beforeSeconds-afterSeconds)>Math.max(4,beforeSeconds*0.01));
@@ -267,14 +284,14 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
     console.log('NÉVIX video inspection: auto='+auto+' format='+sourceExt+' video='+plan.sourceVideo+' audio='+plan.sourceAudio+' channels='+plan.sourceChannels+' needs_conversion='+plan.needsConversion+' video_copy='+plan.videoCopy);
     if(auto&&!plan.needsConversion){
      job.phase='indexing';job.percent=99;job.message='El MP4 es compatible con reproducción web. Publicando el archivo original sin convertir.';
-     if(typeof finishWithoutRemux==='function')await finishWithoutRemux(entry);
+     if(typeof finishWithoutRemux==='function')await finishWithoutRemux(entry,plan.audioTracks);
      job.phase='completed';job.percent=100;job.message='MP4 compatible; no fue necesario convertir.';
      console.log('NÉVIX video verified: auto=true conversion=false');
      return;
     }
     lastPhase='remuxing';job.phase='remuxing';job.percent=1;
     job.message=plan.videoCopy?'Preparando MP4 compatible sin modificar el video. Ajustando audio cuando sea necesario.':'Convirtiendo video '+plan.sourceVideo+' a H.264 compatible. Puede requerir bastante procesamiento.';
-    console.log('NÉVIX video conversion: phase=ffmpeg auto='+auto+' video_copy='+plan.videoCopy+' audio='+plan.sourceAudio+' surround='+plan.surround);
+    console.log('NÉVIX video conversion: phase=ffmpeg auto='+auto+' video_copy='+plan.videoCopy+' audio='+plan.sourceAudio+' tracks='+plan.audioTracks.length);
     await ffmpegConvert(input,output,plan,pct=>{job.percent=Math.max(job.percent,pct);},duration);
     const after=await probe(output);
     if(!validateMedia(before,after,plan))throw Error('La versión preparada no pasó la verificación de video, audio y duración.');
@@ -289,7 +306,7 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
     console.log('NÉVIX R2 MP4 repair: phase=uploading size_mb='+Math.round(ready.size/1048576));
     await multipartFile(client,bucket,storageOps,key,output,ready.size,pct=>{job.percent=Math.max(job.percent,pct);});
     job.phase='indexing';lastPhase='indexing';job.percent=0;job.message='Publicando MP4 compatible y conservando el archivo original.';
-    await finalize(entry,key,ready.size);
+    await finalize(entry,key,ready.size,plan.audioTracks);
     job.phase='completed';job.percent=100;job.message='Película compatible H.264/AAC guardada. El archivo original permanece como respaldo en R2.';
     console.log('NÉVIX R2 MP4 repair completed: auto='+auto+' original_preserved=true size_mb='+Math.round(ready.size/1048576));
    }catch(e){
