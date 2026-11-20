@@ -138,8 +138,14 @@ export function createPrivateAudioTracks({client,bucket,admin,family,origin,find
   try{
    const film=await findFilm(job.id);
    if(!film)throw Error('La película ya no está disponible.');
-   const srcKey=film.backupKey&&film.backupKey.startsWith('peliculas/')?film.backupKey:film.key;
-   const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:srcKey}));
+   let srcKey=film.backupKey&&film.backupKey.startsWith('peliculas/')?film.backupKey:film.key;
+   let head;
+   try{head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:srcKey}));}
+   catch(e){
+    if(srcKey===film.key||!notFound(e))throw e;
+    srcKey=film.key;
+    head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:srcKey}));
+   }
    const size=Number(head.ContentLength)||0;
    if(size<100||size>MAX_MEDIA_BYTES)throw Error('El archivo no cabe en el límite de análisis de 4 GiB.');
    const tmp=await statfs(tmpdir());
