@@ -2020,7 +2020,11 @@ async function privateRequest(route,code,adminAccess=false,method='GET',payload=
    const response=await fetch(WATCHMODE_BACKEND+route,{method,headers,cache:'no-store',signal:AbortSignal.timeout(timeout),...(payload?{body:JSON.stringify(payload)}:{})});
    let result={};
    try{result=await response.json();}catch(_){}
-   if(!response.ok)throw new Error(result.message||((response.status===401||response.status===403)?'Código de acceso incorrecto o sin permisos.':'El servidor privado respondió con HTTP '+response.status+'.'));
+   if(!response.ok){
+    const error=new Error(result.message||((response.status===401||response.status===403)?'Código de acceso incorrecto o sin permisos.':'El servidor privado respondió con HTTP '+response.status+'.'));
+    error.status=response.status;error.code=String(result.error||'');
+    throw error;
+   }
    return result;
   }catch(error){
    const networkError=['TypeError','TimeoutError','AbortError'].includes(String(error?.name||''));
@@ -2507,7 +2511,12 @@ async function privateSendMp4Part({sessionId,part,piece,key,onProgress,row}){
    if(row?.cancelRequested)return reject(Error('Subida cancelada por administración.'));
    if(xhr.status>=200&&xhr.status<300&&result.ok&&Number(result.part)===part)return resolve(result);
    const error=Error(result.message||'El servidor rechazó el bloque '+part+' (HTTP '+xhr.status+').');
-   error.permanent=[400,401,403,404,409,413,422].includes(xhr.status);
+   error.status=xhr.status;
+   error.code=String(result.error||'');
+   // A busy part may still be finishing after the browser lost the connection.
+   // Do not treat R2 part_busy (409) as a permanent failure.
+   error.permanent=[400,401,403,404,413,422].includes(xhr.status)
+    ||(xhr.status===409&&error.code!=='part_busy');
    reject(error);
   };
   xhr.onerror=()=>{release();reject(Error('Falló la conexión al enviar el bloque '+part+'. Comprueba Wi-Fi o datos móviles.'));};
@@ -2758,15 +2767,22 @@ async function privateVerifyUploadKey(key){
 }
 async function privateRetryUpload(id){
  const row=privateBatchUploads.find(x=>x.id===String(id||''));
- if(!row||row.phase!=='failed'||row.cancelRequested)return;
+ if(!row||row.phase!=='failed'||row.cancelRequested||row.retrying)return;
  if(!row.file)return toast('Vuelve a seleccionar el mismo archivo para recuperar sus bloques confirmados.');
  const key=document.getElementById('private-admin-key')?.value?.trim()||row.uploadKey||'';
  if(!key)return toast('Introduce el código de administración.');
+ row.retrying=true;privateRenderUploadBatch(true);
  privateAdminKeyMemory=key;
- if(!await privateVerifyUploadKey(key))return;
- row.uploadKey=key;row.retrying=true;row.allowLegacy=true;
- privateUpdateUploadRow(row,'En cola para recuperar los bloques anteriores…',row.percent,'queued');
- void privateDrainUploadQueue();
+ try{
+  if(!await privateVerifyUploadKey(key))return;
+  if(row.phase!=='failed'||row.cancelRequested)return;
+  row.uploadKey=key;row.allowLegacy=true;
+  privateUpdateUploadRow(row,'Consultando los bloques guardados para reanudar…',row.percent,'queued');
+  void privateDrainUploadQueue();
+ }finally{
+  if(row.phase==='failed')row.retrying=false;
+  privateRenderUploadBatch(true);
+ }
 }
 async function privateDrainUploadQueue(){
  if(privateBatchRunning)return;
