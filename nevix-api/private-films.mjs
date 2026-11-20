@@ -168,6 +168,13 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   })().finally(()=>{running=null;});
   return running;
  }
+ // Fast, non-destructive catalogue view: reading the saved index does not
+ // enumerate every large movie on R2. Full scans still run for explicit
+ // administrative resync and immediately after upload completion.
+ async function catalogSnapshot(){
+  const rows=await readIndex();
+  return rows.length?rows:await sync();
+ }
  let remux=null;
  async function markValidationFailed(entry,message){
   const rows=await sync(true),x=rows.find(y=>y.key===entry.key&&y.id===entry.id);
@@ -260,7 +267,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     if(req.method!=='GET'&&req.method!=='HEAD')return reply(res,405,{error:'method_not_allowed'});
     const id=string(url.searchParams.get('id')),expiration=string(url.searchParams.get('expires'));
     if(!checkVideoToken(id,expiration,string(url.searchParams.get('sig'))))return reply(res,403,{error:'video_access_expired',message:'El acceso temporal al video expiró.'});
-    const rows=await sync();
+    const rows=await catalogSnapshot();
     const entry=rows.find(x=>x.id===id&&x.status==='ready'&&x.key.startsWith(PREFIX)&&OUTPUT_MP4.test(x.key));
     if(!entry)return reply(res,404,{error:'video_unavailable'});
     const range=string(req.headers.range);
@@ -291,13 +298,15 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/catalog'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied',message:'Introduce tu código de acceso familiar.'});
-    const rows=await sync();
-    return reply(res,200,{movies:rows.filter(x=>x.status==='ready'&&OUTPUT_MP4.test(x.key)).map(sanitizedCatalog),pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length,updatedAt:new Date().toISOString()});
+    const rows=await catalogSnapshot();
+    const movies=rows.filter(x=>x.status==='ready'&&OUTPUT_MP4.test(x.key)).map(sanitizedCatalog);
+    console.log('NÉVIX family catalog: available='+movies.length+' pending='+rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length+' indexed=true');
+    return reply(res,200,{movies,pending:rows.filter(x=>x.status!=='ready'&&x.status!=='backup').length,updatedAt:new Date().toISOString()});
    }
    if(url.pathname==='/api/private/stream'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
     if(!auth(req,'family')&&!auth(req,'admin'))return reply(res,401,{error:'access_denied'});
-    const id=string(url.searchParams.get('id')),rows=await sync();
+    const id=string(url.searchParams.get('id')),rows=await catalogSnapshot();
     const item=rows.find(x=>x.id===id&&x.status==='ready'&&OUTPUT_MP4.test(x.key));
     if(!item)return reply(res,404,{error:'not_available'});
     const proxy=signedVideoPath(item.id);
@@ -324,7 +333,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname.startsWith('/api/private/upload/')&&!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 todavía no está configurado o no superó la prueba de subida. Comprueba las credenciales.'});
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/library'&&req.method==='GET'){
-    const rows=await sync(true);
+    const rows=url.searchParams.get('refresh')==='1'?await sync(true):await catalogSnapshot();
     return reply(res,200,{files:rows.map(x=>({
      id:x.id,title:x.title,year:x.year||'',status:x.status,size:x.size||0,
      remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',
@@ -350,7 +359,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{ok:true,deleted:true,bytes,wasBackup,remaining:updated.length});
    }
    if(url.pathname==='/api/private/admin/catalog'&&req.method==='GET'){
-    const rows=await sync(true),items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',job:remux?.findByFilm(x.id)||null}));
+    const rows=await catalogSnapshot(),items=rows.filter(x=>x.status!=='backup').map(x=>({id:x.id,title:x.title,year:x.year,status:x.status,size:x.size,image:x.image||'',remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',job:remux?.findByFilm(x.id)||null}));
     const pendingItems=items.filter(x=>x.status!=='ready');
     console.log('NÉVIX R2 admin catalog: movies='+items.length+' pending='+pendingItems.length);
     return reply(res,200,{items,pendingItems,ready:items.length-pendingItems.length,pending:pendingItems.length});
