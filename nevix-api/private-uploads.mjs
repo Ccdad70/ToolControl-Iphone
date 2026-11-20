@@ -145,6 +145,10 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     if(cleanupRunning){respond(res,503,{error:'cleanup_in_progress',message:'Finalizando limpieza de subidas incompletas en R2. Vuelve a intentar.'});return true;}
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
     const data=await readJson(req),name=safeString(data.name),size=Number(data.size);
+    const title=safeString(data.title).slice(0,130),year=safeString(data.year).slice(0,4);
+    if(data.title!==undefined&&(title.length<2||title.length>130)||year&&!/^(19|20)\d{2}$/.test(year)){
+     respond(res,400,{error:'invalid_movie_title',message:'Introduce un título de al menos dos caracteres y un año válido (opcional).'});return true;
+    }
     const ext=name.match(ALLOWED);
     if(!ext||!Number.isSafeInteger(size)||size<1||size>MAX_SIZE){
      respond(res,400,{error:'invalid_video',message:'Selecciona un video MP4, MKV, AVI, MOV, WEBM, WMV, MPEG, TS o M2TS menor de 5 GiB.'});return true;
@@ -156,7 +160,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
-    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,parts:new Map(),updatedAt:Date.now(),busy:false,finalizing:false,cancelRequested:false,abortInProgress:false});
+    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,title,year,parts:new Map(),updatedAt:Date.now(),busy:false,finalizing:false,cancelRequested:false,abortInProgress:false});
     console.log('NÉVIX R2 upload start: format='+ext[1].toLowerCase()+' size_mb='+Math.round(size/1048576)+' chunks='+chunks);
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
    }
@@ -164,7 +168,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     if(req.method!=='GET'){respond(res,405,{error:'method_not_allowed'});return true;}
     const id=safeString(url.searchParams.get('id'));
     const s=session(res,id);if(!s)return true;
-    respond(res,200,{uploadId:id,name:s.name,size:s.size,chunks:s.chunks,chunkSize:CHUNK_SIZE,receivedParts:[...s.parts.keys()].sort((a,b)=>a-b)});
+    respond(res,200,{uploadId:id,name:s.name,size:s.size,chunks:s.chunks,title:s.title||'',year:s.year||'',chunkSize:CHUNK_SIZE,receivedParts:[...s.parts.keys()].sort((a,b)=>a-b)});
     return true;
    }
    if(url.pathname==='/api/private/upload/part'){
@@ -222,7 +226,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      console.log('NÉVIX R2 upload complete: size_mb='+Math.round(s.size/1048576)+' chunks='+s.chunks+' verified=true');
     }finally{s.busy=false;s.finalizing=false;}
     let result=null;
-    try{result=await onComplete(s.key);}
+    try{result=await onComplete(s.key,{title:s.title||'',year:s.year||''});}
     catch(e){console.error('NÉVIX automatic MP4 verification setup failed after upload: '+safeString(e?.name||'Error'));}
     respond(res,200,{ok:true,stored:true,ready:result?.ready??null,pending:result?.pending??null,
       metadataPending:result===null,autoProcessing:result?.autoProcessing===true,jobId:result?.jobId||null,
