@@ -240,7 +240,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    }
    if(url.pathname==='/api/private/status'){
     if(req.method!=='GET')return reply(res,405,{error:'method_not_allowed'});
-    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround'});
+    return reply(res,200,{configured,connected:uploadReady,uploadReady,provider:'Cloudflare R2',supports:['mp4','m4v','mkv','avi','mov','webm','wmv','mpeg','mpg','ts','m2ts'],output:'mp4',audio:'aac_stereo_and_5_1_if_surround',orphanCleanup:uploads?.cleanupStatus()||null});
    }
    if(!configured)return reply(res,503,{error:'storage_not_configured',message:'Configura R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY en Render.'});
    if(url.pathname==='/api/private/dub-source'||url.pathname==='/api/private/dub-audio'){
@@ -416,8 +416,11 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    stage='verify';const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
    if(Number(head.ContentLength)!==big.length+small.length)throw Error('size_mismatch');
    stage='catalog';const movies=await sync(true);
-   uploadReady=true;console.log('NÉVIX R2 readiness: multipart=true ready_movies='+movies.filter(x=>x.status==='ready').length);
-   return {ok:true,reason:'r2_multipart_verified'};
+   stage='cleanup';const cleanup=await uploads.cleanupIncomplete();
+   // Cancellation is best effort when permissions or network are restricted.
+   // Publish normal upload readiness, but expose the exact cleanup result for verification.
+   uploadReady=true;console.log('NÉVIX R2 readiness: multipart=true ready_movies='+movies.filter(x=>x.status==='ready').length+' cleanup_ok='+cleanup.ok+' orphan_aborted='+Number(cleanup.aborted||0));
+   return {ok:true,reason:'r2_multipart_verified',cleanup};
   }catch(e){console.error('NÉVIX R2 check failed: stage='+stage+' type='+String(e?.name||'Error').slice(0,42)+' http='+String(e?.$metadata?.httpStatusCode||'none'));
    return {ok:false,reason:'r2_probe_failed',stage};
   }finally{
