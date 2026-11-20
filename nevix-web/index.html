@@ -1600,10 +1600,22 @@ async function loadCountry(code,force=false){
  try{
   const playlistCode=code==='gb'?'uk':code;
   const url=code==='int'?'https://shahrukhalid.github.io/nexonic-iptv/playlists/categories/news.m3u':'https://shahrukhalid.github.io/nexonic-iptv/playlists/countries/'+playlistCode+'.m3u';
-  fetchLimit=setTimeout(()=>controller.abort(),9000);
-  const response=await fetch(url,{mode:'cors',cache:'no-store',signal:controller.signal});
-  if(!response.ok)throw Error('Lista temporalmente no disponible');
-  const playlist=await response.text();
+  fetchLimit=setTimeout(()=>controller.abort(),14000);
+  let playlist='';
+  try{
+   const response=await fetch(url,{mode:'cors',cache:'no-store',signal:controller.signal});
+   if(!response.ok)throw Error('Lista principal no disponible');
+   playlist=await response.text();
+  }catch(primaryError){
+   if(!active())return;
+   // Official fallback from the same open playlist repository.
+   const rawUrl=code==='int'
+    ?'https://raw.githubusercontent.com/Shahrukhalid/nexonic-iptv/main/playlists/categories/news.m3u'
+    :'https://raw.githubusercontent.com/Shahrukhalid/nexonic-iptv/main/playlists/countries/'+playlistCode+'.m3u';
+   const response=await fetch(rawUrl,{mode:'cors',cache:'no-store',signal:controller.signal});
+   if(!response.ok)throw Error('No se pudo consultar ninguna fuente de canales gratuitos.');
+   playlist=await response.text();
+  }
   clearTimeout(fetchLimit);fetchLimit=null;
   if(!active())return;
   const candidates=parseCountryPlaylist(playlist,country).concat(veExperimentalCandidates(country));
@@ -2722,7 +2734,7 @@ async function privateRetryUpload(id){
 async function privateUploadAdmin(){
  if(privateBatchRunning)return;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
- const input=document.getElementById('private-film-file'),picked=Array.from(input?.files||[]);
+ const input=document.getElementById('private-film-file'),picked=privateUploadDrafts.length?privateUploadDrafts.map(x=>x.file):Array.from(input?.files||[]);
  if(!key){toast('Introduce tu código de administración.');return;}
  if(!picked.length){toast('Selecciona una o varias películas.');return;}
  privateReadUploadDraftValues();
