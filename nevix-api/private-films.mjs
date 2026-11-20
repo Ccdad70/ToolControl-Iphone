@@ -342,6 +342,15 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    }
    if(url.pathname==='/api/private/upload/direct')return reply(res,410,{error:'upgrade_required',message:'Actualiza NÉVIX TV; el MP4 se sube por bloques a R2.'});
    if(url.pathname.startsWith('/api/private/upload/')&&!uploadReady)return reply(res,503,{error:'r2_not_ready',message:'Cloudflare R2 todavía no está configurado o no superó la prueba de subida. Comprueba las credenciales.'});
+   if(url.pathname==='/api/private/upload/metadata-preview'&&req.method==='POST'){
+    const input=await body(req);
+    const title=string(input.title),year=string(input.year);
+    if(title.length<2||title.length>130||year&&!/^(19|20)\d{2}$/.test(year))
+     return reply(res,400,{error:'invalid_metadata',message:'Escribe el título y opcionalmente el año de estreno (4 cifras).'});
+    const match=await tmdbSearchPoster(title,year,'movie');
+    if(!match?.image)return reply(res,200,{ok:true,found:false,message:'No se encontró una portada exacta. Podrás revisarla después de subir la película.'});
+    return reply(res,200,{ok:true,found:true,image:match.image,description:match.overview||'',matchedTitle:match.matchedTitle||title,matchedYear:match.matchedYear||'',title,year});
+   }
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/library'&&req.method==='GET'){
     const rows=url.searchParams.get('refresh')==='1'?await sync(true):await catalogSnapshot();
@@ -382,15 +391,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const pendingItems=items.filter(x=>x.status!=='ready');
     console.log('NÉVIX R2 sync: movies='+items.length+' pending='+pendingItems.length);
     return reply(res,200,{ready:items.length-pendingItems.length,pending:pendingItems.length,pendingItems});
-   }
-   if(url.pathname==='/api/private/upload/metadata-preview'&&req.method==='POST'){
-    const input=await body(req);
-    const title=string(input.title),year=string(input.year);
-    if(title.length<2||title.length>130||year&&!/^(19|20)\d{2}$/.test(year))
-     return reply(res,400,{error:'invalid_metadata',message:'Escribe el título y opcionalmente el año de estreno (4 cifras).'});
-    const match=await tmdbSearchPoster(title,year,'movie');
-    if(!match?.image)return reply(res,200,{ok:true,found:false,message:'No se encontró una portada exacta. Podrás revisarla después de subir la película.'});
-    return reply(res,200,{ok:true,found:true,image:match.image,description:match.overview||'',matchedTitle:match.matchedTitle||title,matchedYear:match.matchedYear||'',title,year});
    }
    if(url.pathname==='/api/private/metadata-preview'&&req.method==='POST'){
     const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
