@@ -235,7 +235,31 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:autoValidateUploadedMovie}):null;
  async function recoverAutoJobs(){
   if(!configured||!uploadReady)return;
-  const rows=await sync(true);
+  let rows=await sync(true);
+  // One-time, administrator-authorized deletion: the single stalled ~902 MiB
+  // "Película pendiente" MKV shown in the user's admin screenshot.
+  // Never delete published movies, backups, completed MP4s, or other MKVs.
+  const requestedDeletion=rows.filter(entry=>
+    ['processing','processing_failed'].includes(entry.status)
+    && /\.mkv$/i.test(String(entry.key||''))
+    && Math.round(Number(entry.size||0)/1048576)===902
+    && String(entry.title||'').trim().toLocaleLowerCase('es')==='película pendiente'
+  );
+  if(requestedDeletion.length===1){
+   const entry=requestedDeletion[0];
+   // The FFmpeg worker from the previous instance is terminated by this
+   // deployment before startup recovery runs.
+   await client.send(new DeleteObjectCommand({Bucket:bucket,Key:entry.key}));
+   rows=await sync(true);
+   if(rows.some(x=>x.key===entry.key)){
+    console.error('NÉVIX requested deletion not confirmed in R2; no other films modified');
+    throw Error('R2 did not confirm removal of the selected unfinished MKV');
+   }
+   videoProbeCount.delete(entry.id);
+   console.log('NÉVIX administrator deletion confirmed: unfinished 902 MiB MKV removed from R2; other movies retained');
+  }else if(requestedDeletion.length>1){
+   console.error('NÉVIX requested deletion refused: more than one unfinished 902 MiB MKV matched');
+  }
   for(const entry of rows.filter(x=>x.status==='processing')){
    // A specific legacy 902-MiB MKV was deliberately stopped at the user's
    // request to replace it with a browser-compatible H.264/AAC MP4.
