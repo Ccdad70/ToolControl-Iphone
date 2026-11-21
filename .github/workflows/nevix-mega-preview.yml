@@ -1,0 +1,31 @@
+name: Nevix MEGA preview checks
+on:
+  push:
+    branches: [nevix-mega-import-preview-20261121]
+  pull_request:
+    branches: [nevix-tv-live]
+    paths:
+      - 'nevix-api/**'
+      - 'nevix-web/**'
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check nevix-api/private-films.mjs && node --check nevix-api/private-mega-import.mjs && node --test nevix-api/private-mega-import.test.mjs
+      - run: |
+          python3 - <<'PY'
+          import re, pathlib
+          s=pathlib.Path('nevix-web/index.html').read_text()
+          scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',s,re.S|re.I)
+          for i,x in enumerate(scripts):
+              if x.strip(): pathlib.Path('/tmp/nevix-script-'+str(i)+'.js').write_text(x)
+          PY
+          for f in /tmp/nevix-script-*.js; do node --check "$f"; done
+      - run: npm install --ignore-scripts --no-audit --no-fund
+        working-directory: nevix-api
+      - run: node --input-type=module -e "import {File} from 'megajs'; if(typeof File.fromURL !== 'function') process.exit(1)"
+        working-directory: nevix-api
