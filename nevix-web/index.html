@@ -1402,7 +1402,9 @@ const OFFICIAL_SOURCES=[
 
 // Directorio de señales públicas de terceros. Que una URL sea pública NO prueba licencia ni compatibilidad.
 // El usuario decide qué país cargar; no almacenamos ni retransmitimos los videos.
+const DOCUMENTARY_EMBEDS=[{"id":"doc-love-es","title":"Love Nature en Español","short":"Love Nature en Español","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"MswfEoVR-yw","url":"https://www.youtube.com/watch?v=MswfEoVR-yw","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/MswfEoVR-yw/hqdefault.jpg"},{"id":"doc-love-en","title":"Love Nature","short":"Love Nature","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"Zns4k_dICzs","url":"https://www.youtube.com/watch?v=Zns4k_dICzs","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/Zns4k_dICzs/hqdefault.jpg"},{"id":"doc-directo-natura","title":"Directo Natura","short":"Directo Natura","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"JZ2NxbbBpEA","url":"https://www.youtube.com/watch?v=JZ2NxbbBpEA","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/JZ2NxbbBpEA/hqdefault.jpg"},{"id":"doc-africam","title":"Africam","short":"Africam","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"vr4o_AsrU1k","url":"https://www.youtube.com/watch?v=vr4o_AsrU1k","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/vr4o_AsrU1k/hqdefault.jpg"},{"id":"doc-planet-doc","title":"Planet Doc","short":"Planet Doc","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"81YDIGsHyLs","url":"https://www.youtube.com/watch?v=81YDIGsHyLs","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/81YDIGsHyLs/hqdefault.jpg"},{"id":"doc-wildearth","title":"WildEarth","short":"WildEarth","kind":"live","category":"🌿 Documentales","countryCode":"doc","genre":"Naturaleza y animales","embedType":"youtube","videoId":"UyiIiqQ_SaI","url":"https://www.youtube.com/watch?v=UyiIiqQ_SaI","source":"YouTube oficial del emisor","direct":true,"image":"https://i.ytimg.com/vi/UyiIiqQ_SaI/hqdefault.jpg"}];
 const COUNTRIES=[
+ ['doc','🌿','Documentales'],
  ['ve','🇻🇪','Venezuela'],['us','🇺🇸','Estados Unidos'],['mx','🇲🇽','México'],['co','🇨🇴','Colombia'],
  ['ar','🇦🇷','Argentina'],['es','🇪🇸','España'],['pe','🇵🇪','Perú'],['cl','🇨🇱','Chile'],
  ['br','🇧🇷','Brasil'],['pt','🇵🇹','Portugal'],['ec','🇪🇨','Ecuador'],['bo','🇧🇴','Bolivia'],
@@ -1490,7 +1492,7 @@ async function checkBrowserStream(it, signal){
    holder.remove();resolve(Boolean(ok));
   };
   const cancelVideo=()=>finish(false);
-  const confirmed=()=>{if(!ended&&!video.paused&&video.readyState>=2&&video.videoWidth>16&&video.videoHeight>16)finish(true);};
+  let firstTime=null;const confirmed=()=>{if(!ended&&!video.paused&&video.readyState>=2&&video.videoWidth>16&&video.videoHeight>16){if(firstTime===null)firstTime=video.currentTime;else if(video.currentTime-firstTime>=0.5)finish(true);}};
   const t=setTimeout(()=>finish(false),8500);
   signal?.addEventListener('abort',cancelVideo,{once:true});
   if(signal?.aborted){finish(false);return;}
@@ -1576,7 +1578,8 @@ async function loadCountry(code,force=false){
  if(activeCountryLoad){activeCountryLoad.controller.abort();activeCountryLoad=null;}
  state.loadingCountry=null;
  state.loadProgress='';
- const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&(/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))));
+ if(code==='doc'){render();return;}
+ const cached=!force&&state.loadedCountries.includes(code)&&state.worldChannels.some(x=>x.countryCode===code&&isVerifiedLive(x));
  const recentEmpty=!force&&Date.now()-(countryRetryAt[code]||0)<90000;
  if(cached||recentEmpty){render();return;}
  if(force)state.failedStreams=state.failedStreams.filter(id=>!id.startsWith('official-'+code+'-'));
@@ -1682,7 +1685,7 @@ const state={
  progress:typeof saved?.progress==='object'&&saved.progress? saved.progress:{},
  pinHash:typeof saved?.pinHash==='string'?saved.pinHash:'',
  unlocked:false,
- sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&Date.now()-Number(x.testedAt||0)<6*3600000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===2?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:cachedCatalogList('movieRecentItems'),moviePopularItems:cachedCatalogList('moviePopularItems'),moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:cachedCatalogList('seriesRecentItems'),seriesPopularItems:cachedCatalogList('seriesPopularItems'),seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
+ sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&saved?.playbackProbeVersion===3&&Date.now()-Number(x.testedAt||0)<30*60000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===3?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:cachedCatalogList('movieRecentItems'),moviePopularItems:cachedCatalogList('moviePopularItems'),moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:cachedCatalogList('seriesRecentItems'),seriesPopularItems:cachedCatalogList('seriesPopularItems'),seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
  hls:null,playing:null,lastSave:0
 };
 const REPLACED_OFFICIAL_IDS=new Set(['official-us-abc','official-us-cbs','official-de-dw','official-fr-france24']);
@@ -1691,10 +1694,22 @@ function saveCatalogSnapshot(){try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.s
 function movieCatalogItems(){const seen=new Set();return [...privateMovies,...state.movieRecentItems,...state.moviePopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function seriesCatalogItems(){const seen=new Set();return [...state.seriesRecentItems,...state.seriesPopularItems].filter(it=>{if(seen.has(it.id))return false;seen.add(it.id);return true;});}
 function isRetiredStarterTitle(it){return (it?.kind==='movie'||it?.kind==='series')&&(it?.openLicense===true||it?.free===true||it?.sample===true||String(it?.id||'').startsWith('open-')||String(it?.id||'').startsWith('demo-')||String(it?.id||'').startsWith('official-vod-'));}
-function allItems(){return [...venezuelaFeaturedCards(),...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS,...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))&&!state.failedStreams.includes(x.id)&&!VE_FEATURED_CHANNELS.some(e=>String(x.short||x.title||'').toLocaleLowerCase('es').startsWith(e.name.toLocaleLowerCase('es')))),...state.items.filter(x=>!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>!isRetiredStarterTitle(x))];}
+const LIVE_PROOF_TTL=30*60*1000;
+const YOUTUBE_PROOF_KEY='nevix-youtube-proof-v1';
+let youtubeProof={};
+try{const v=JSON.parse(localStorage.getItem(YOUTUBE_PROOF_KEY)||'{}');if(v&&typeof v==='object'&&!Array.isArray(v))youtubeProof=v;}catch(_){}
+function isVerifiedLive(it,now=Date.now()){
+ return Boolean(it&&it.kind==='live'&&it.browserPlayable===true&&it.verifiedPlayback===true&&Number.isFinite(it.testedAt)&&it.testedAt<=now&&now-it.testedAt<LIVE_PROOF_TTL);
+}
+function youtubeCandidates(){return [...DOCUMENTARY_EMBEDS,...OFFICIAL_EMBEDS,...LATAM_OFFICIAL_EMBEDS].filter(it=>it.kind==='live'&&it.embedType==='youtube'&&/^[\w-]{11}$/.test(it.videoId||''));}
+function verifiedYoutubeItems(){return youtubeCandidates().map(it=>{const p=youtubeProof[it.id];return {...it,browserPlayable:p?.videoId===it.videoId,verifiedPlayback:p?.videoId===it.videoId,testedAt:p?.testedAt};}).filter(it=>isVerifiedLive(it));}
+function persistYoutubeProof(){try{localStorage.setItem(YOUTUBE_PROOF_KEY,JSON.stringify(youtubeProof));}catch(_){}}
+function invalidateLive(id){if(!id)return;delete youtubeProof[id];persistYoutubeProof();state.worldChannels=state.worldChannels.filter(x=>x.id!==id);store();}
+function allItems(){return [...verifiedYoutubeItems(),...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&!state.failedStreams.includes(x.id)&&isVerifiedLive(x)),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
-function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:2,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
+function store(){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))).slice(0,1000),veExpanded:true,veHlsProbeVersion:1,playbackProbeVersion:3,failedStreams:state.failedStreams.slice(0,1000),loadedCountries:state.loadedCountries}));return true;}catch(err){toast('No hay espacio para guardar datos en este navegador.');return false;}}
 function toast(message){els.toast.textContent=message;els.toast.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>els.toast.classList.remove('show'),3500);}
 function pageTitle(title,sub){return `<div class="eyebrow">TU ENTRETENIMIENTO</div><h1 class="page-title">${esc(title)}</h1><p class="page-sub">${esc(sub)}</p>`;}
 function movieCover(it){
@@ -1736,7 +1751,7 @@ function navHTML(){return Object.entries(NAMES).map(([key,name])=>`<button class
 function mobileNavHTML(){const tabs=[['inicio','Inicio','⌂'],['live','TV','▣'],['movie','Películas','▤'],['series','Series','▦'],['favorites','Mi lista','♡']];return tabs.map(([key,label,icon])=>`<button class="bottom-tab ${state.view===key?'active':''}" data-action="nav" data-view="${key}" aria-label="${label}" aria-current="${state.view===key?'page':'false'}"><span class="bottom-icon" aria-hidden="true">${icon}</span><span>${label}</span></button>`).join('');}
 function homePreviewSource(){
  const playable=allItems().filter(it=>it.kind==='live'&&it.browserPlayable===true&&!isRemovedVeChannel(it)&&typeof it.url==='string'&&/^https:\/\//i.test(it.url));
- const approved=[...LATAM_OFFICIAL_EMBEDS,...OFFICIAL_EMBEDS].filter(it=>it.embedType==='youtube'&&/^[\w-]{11}$/.test(it.videoId||''));
+ const approved=verifiedYoutubeItems();
  return [...playable,...approved].find(it=>it.id===homePreviewId)||playable[0]||approved[0]||null;
 }
 let homePreviewId=null,homePreviewActive=false,homePreviewHls=null;
@@ -1792,7 +1807,7 @@ function renderHome(){
  const heroDesc=featured?esc(featured.description||'Explora esta historia y descubre dónde verla en su plataforma oficial.'):'Descubre películas, series, televisión en vivo y tus canales favoritos en un solo lugar.';
  const categories=netflixCatalogEnabled?[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['movie','♛','Ranking'],['movie','✧','Últimos estrenos'],['favorites','♡','Favoritos']]:[['live','▣','Canales en vivo'],['movie','▤','Películas'],['series','▦','Series'],['favorites','♡','Favoritos']];
  const categoryTiles=categories.map(([view,icon,title])=>'<button class="cinema-cat" data-action="nav" data-view="'+view+'"><span class="cinema-cat-icon" aria-hidden="true">'+icon+'</span><strong>'+title+'</strong></button>').join('');
- const countries=['ve','us','co','ar','pt'].map(code=>COUNTRIES.find(c=>c[0]===code)).filter(Boolean).map(c=>'<button class="cinema-country" data-action="home-country" data-code="'+c[0]+'"><span class="flag" aria-hidden="true">'+c[1]+'</span><span>'+esc(c[2])+'</span></button>').join('');
+ const countries=['doc','ve','us','co','ar','pt'].map(code=>COUNTRIES.find(c=>c[0]===code)).filter(Boolean).map(c=>'<button class="cinema-country" data-action="home-country" data-code="'+c[0]+'"><span class="flag" aria-hidden="true">'+c[1]+'</span><span>'+esc(c[2])+'</span></button>').join('');
  const liveCards=live.slice(0,18).map(it=>'<button class="cinema-channel" data-action="home-preview" data-id="'+esc(it.id)+'" aria-label="Vista previa de '+esc(it.title)+'"><span class="channel-image">'+artwork(it)+'</span><span class="channel-caption">'+esc(it.short||it.title)+'</span></button>').join('');
  return '<div class="cinema-start">'
  +'<div class="cinema-spotlight"><section class="cinema-featured" aria-label="Contenido destacado"><div class="cinema-art">'+(featured?artwork(featured):'<div class="faux-art tone-2"></div>')+'</div><div class="cinema-feature-text"><span class="cinema-kicker">✦ CONTENIDO DESTACADO</span><h1>'+heroTitle+'</h1><p>'+heroDesc+'</p><div class="cinema-buttons"><button class="btn cinema-red-btn" '+action+'>▶ '+(featured?'Ver ahora':'Explorar películas')+'</button><button class="btn cinema-outline-btn" '+(featured?'data-action="detail" data-id="'+esc(featured.id)+'"':'data-action="nav" data-view="series"')+'>ⓘ '+(featured?'Más información':'Ver series')+'</button></div></div></section>'
@@ -1950,27 +1965,24 @@ function renderCountryOfficialAccess(country){
 function renderLive(){
  const list=allItems().filter(it=>it.kind==='live');
  const chosen=COUNTRIES.find(c=>state.category===c[1]+' '+c[2]);
- const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>
-  (it.browserPlayable===true||it.embedType==='youtube'||/^(Nexonic|Lista pública experimental)/.test(String(it.source||''))||it.source==='manual'||/M3U importada/i.test(String(it.source||'')))
-  &&!it.featuredVenezuela&&!isRemovedVeChannel(it)&&!state.failedStreams.includes(it.id));
- const featured=chosen?.[0]==='ve'?chooseItems(venezuelaFeaturedCards(),{category:state.category,q:state.liveQuery}):[];
+ const available=chooseItems(list,{category:state.category,q:state.liveQuery}).filter(it=>isVerifiedLive(it));
  const shown=available.slice(0,state.liveShown);
  const options=COUNTRIES.map(c=>'<option value="'+esc(c[0])+'" '+(chosen?.[0]===c[0]?'selected':'')+'>'+esc(c[1]+' '+c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</option>').join('');
  const selectedName=chosen?' · '+chosen[1]+' '+chosen[2]:'';
  return pageTitle('TV en vivo',chosen?'Canales gratuitos de '+chosen[2]:'Explora televisión gratuita por país')
  +'<div class="live-control-panel"><div class="live-control-title">📺 TELEVISIÓN GRATIS</div>'
- +'<p>Selecciona un país para ver sus canales gratuitos. Puedes probar cada señal dentro de NÉVIX; las restricciones del emisor o del navegador pueden impedir reproducir algunas.</p>'
+ +'<p>Solo se muestran señales gratuitas cuya reproducción se ha comprobado recientemente en este dispositivo.</p>'
  +'<div class="live-controls"><label class="country-picker"><span>País</span><select id="country-select" aria-label="Seleccionar país">'+options+'</select></label>'
  +'<button class="btn btn-primary" data-action="load-country">'+(state.loadingCountry?'⌛ Preparando canales…':'↻ Actualizar canales')+'</button>'
  +'<button class="btn btn-sm" data-action="reset-country-filter">🌐 Países consultados</button></div>'
  +'<div class="live-shortcuts">'+COUNTRIES.slice(0,10).map(c=>'<button class="country-chip '+(state.category===c[1]+' '+c[2]?'on':'')+'" data-action="quick-country" data-code="'+c[0]+'">'+c[1]+' '+esc(c[2])+(state.loadedCountries.includes(c[0])?' ✓':'')+'</button>').join('')+'</div></div>'
- +(chosen?.[0]==='ve'?'<section style="margin:20px 0 24px"><div class="section-head"><h2>🇻🇪 Canales de Venezuela</h2></div><div class="tile-grid">'+featured.map(it=>card(it,true)).join('')+'</div></section>':'')
- +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' canales para explorar'+selectedName+'</span></div>'
+ +'<div class="actions"><button class="btn" data-action="live-check-youtube">Comprobar señales YouTube</button></div><div id="live-youtube-check" aria-live="polite"></div>'
+ +'<div class="live-tools"><label class="live-search-label">⌕ <input id="live-search" type="search" value="'+esc(state.liveQuery)+'" placeholder="Buscar canal…" autocomplete="off"></label><span class="live-count">'+available.length+' canales con reproducción comprobada'+selectedName+'</span></div>'
  +(state.loadingCountry?'<div class="message" role="status">Preparando canales gratuitos… Puedes cambiar de país cuando quieras.</div>':'')
  +(shown.length?'<div class="tile-grid">'+shown.map(it=>card(it,true)).join('')+'</div>':
-  '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+(state.loadingCountry?'Preparando canales…':'No hay canales disponibles por ahora')+'</h3><p>Explora los accesos oficiales que aparecen más abajo o selecciona otro país.</p></div>')
+  '<div class="empty-state"><div class="empty-icon">📺</div><h3>'+(state.loadingCountry?'Preparando canales…':'No hay canales disponibles por ahora')+'</h3><p>Actualiza los canales o comprueba las señales de YouTube. Las señales sin comprobar no se muestran.</p></div>')
  +(available.length>shown.length?'<button class="btn" data-action="show-more-live">Ver más canales</button>':'')
- +renderCountryOfficialAccess(chosen);
+ +'';
 }
 
 function renderFavorites(){let fav=allItems().filter(it=>state.favorites.includes(it.id));let continued=allItems().filter(it=>it.kind!=='live'&&(state.progress[it.id]?.time||0)>1);
@@ -3020,7 +3032,7 @@ async function privateRemuxR2Admin(){
  }finally{if(button)button.disabled=false;}
 }
 
-function render({focusSearch=false}={}){els.nav.innerHTML=navHTML();const bottom=$('#mobile-bottom-nav');if(bottom)bottom.innerHTML=mobileNavHTML();if(els.crumb)els.crumb.innerHTML=`NÉVIX TV <span>/</span> ${esc(NAMES[state.view])}`;
+function render({focusSearch=false}={}){stopVisibleYoutubeCheck();els.nav.innerHTML=navHTML();const bottom=$('#mobile-bottom-nav');if(bottom)bottom.innerHTML=mobileNavHTML();if(els.crumb)els.crumb.innerHTML=`NÉVIX TV <span>/</span> ${esc(NAMES[state.view])}`;
  const content={inicio:renderHome,live:renderLive,movie:()=>renderCatalog('movie'),series:()=>renderCatalog('series'),favorites:renderFavorites,search:renderSearch,admin:renderAdmin}[state.view];stopHomePreview();els.main.innerHTML=content?content():renderHome();document.querySelectorAll('.cinema-tab').forEach(btn=>{const active=btn.dataset.view===state.view;btn.classList.toggle('active',active);btn.setAttribute('aria-current',active?'page':'false');});if(state.view==='inicio'&&homePreviewActive)mountHomePreview();if(focusSearch)$('#global-search')?.focus();}
 function go(view){if(view!=='inicio'){homePreviewActive=false;stopHomePreview();}if(view==='netflix'||view==='free')view='movie';if(!NAMES[view])view='inicio';state.view=view;state.category='Todos';state.search='';$('#sidebar').classList.remove('open');location.hash=view;render({focusSearch:view==='search'});if(view==='live')loadCountry('ve');if(view==='movie'&&!state.movieAttempted)loadWatchmodeCatalog();if(view==='series'&&!state.seriesAttempted)loadWatchmodeSeries();window.scrollTo({top:0,behavior:'instant'});}
 function openDetail(id){const it=itemById(id);if(!it)return toast('No encontramos este contenido.');state.selected=it.id;const relevant=it.kind==='series'&&!it.watchmode?allItems().filter(x=>x.kind==='series'&&(x.seriesName||x.title)===(it.seriesName||it.title)).sort((a,b)=>(a.season-b.season)||(a.episode-b.episode)):[];
@@ -3081,7 +3093,7 @@ function connectYoutubeApiPlayer(){
     },
     onError(event){
      if(!youtubeSessionActive(session))return;
-     const code=Number(event?.data||0);
+     invalidateLive(session.channelId);const code=Number(event?.data||0);
      const detail=code===153?'YouTube no recibió un origen HTTP válido. Publica NÉVIX en HTTPS.':
        [101,150].includes(code)?'El emisor no permite integrar esta señal en otra aplicación.':
        code===100?'La transmisión finalizó o fue retirada.':
@@ -3098,6 +3110,56 @@ function connectYoutubeApiPlayer(){
  }
 }
 window.onYouTubeIframeAPIReady=function(){connectYoutubeApiPlayer();};
+let visibleYoutubeCheck=null;
+function stopVisibleYoutubeCheck(){if(visibleYoutubeCheck){visibleYoutubeCheck.abort();visibleYoutubeCheck=null;}}
+async function verifyYoutubeVisible(){
+ if(state.view!=='live'||state.playing)return;
+ const host=document.getElementById('live-youtube-check');if(!host)return;
+ stopVisibleYoutubeCheck();
+ const controller=new AbortController();visibleYoutubeCheck=controller;
+ const active=()=>!controller.signal.aborted&&host.isConnected&&document.visibilityState==='visible'&&!state.playing;
+ const candidates=youtubeCandidates().filter(x=>state.category==='Todos'||x.category===state.category);
+ if(!candidates.length){host.textContent='No hay señales YouTube identificadas para esta categoría.';return;}
+ host.innerHTML='<div class="panel-card"><p id="live-check-progress">Comprobando señales de YouTube…</p><button type="button" class="btn btn-sm" id="live-check-stop">Detener comprobación</button><div id="live-check-frame" style="width:100%;min-width:200px;min-height:200px;margin-top:12px"></div></div>';
+ host.querySelector('#live-check-stop').onclick=()=>controller.abort();
+ host.scrollIntoView({block:'center',behavior:'instant'});
+ const status=host.querySelector('#live-check-progress'),frame=host.querySelector('#live-check-frame');
+ requestYoutubeApi();
+ for(let i=0;i<60&&active()&&!window.YT?.Player;i++)await new Promise(r=>setTimeout(r,150));
+ if(!window.YT?.Player||!active()){if(host.isConnected)host.textContent='No se pudo iniciar la comprobación de YouTube.';return;}
+ let attempts=0;
+ for(const it of candidates){
+  if(!active())break;
+  status.textContent='Comprobando '+(++attempts)+' de '+candidates.length+'…';
+  const playerNode=document.createElement('div');frame.replaceChildren(playerNode);
+  const ok=await new Promise(resolve=>{
+   let player=null,end=false,first=null,timer=null,poll=null;
+   const finish=ok=>{if(end)return;end=true;clearTimeout(timer);clearInterval(poll);controller.signal.removeEventListener('abort',cancel);try{player?.destroy();}catch(_){}resolve(ok);};
+   const cancel=()=>finish(false);
+   controller.signal.addEventListener('abort',cancel,{once:true});
+   function visible(){const r=frame.getBoundingClientRect();const h=Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(0,r.top));const w=Math.max(0,Math.min(r.right,innerWidth)-Math.max(0,r.left));return r.width>=200&&r.height>=200&&h*w>=r.width*r.height/2;}
+   timer=setTimeout(()=>finish(false),20000);
+   try{player=new YT.Player(playerNode,{width:'100%',height:Math.max(200,Math.min(300,Math.floor(frame.clientWidth*9/16))),videoId:it.videoId,playerVars:{autoplay:0,playsinline:1,origin:location.origin},events:{
+    onReady(e){if(!active()||!visible())return finish(false);try{e.target.mute();e.target.playVideo();}catch(_){finish(false);}},
+    onError(){finish(false);},onAutoplayBlocked(){finish(false);}
+   }});
+   poll=setInterval(()=>{
+    if(!active()||!visible())return finish(false);
+    try{if(player?.getPlayerState?.()!==1)return;
+     const data=player.getVideoData?.()||{},t=Number(player.getCurrentTime()),duration=Number(player.getDuration());
+     if(data.video_id!==it.videoId||!Number.isFinite(t)||!Number.isFinite(duration))return;
+     if(!first)first={t,duration};
+     if(t-first.t>=1.5&&(data.isLive===true||duration-first.duration>=1))finish(true);
+    }catch(_){}
+   },500);
+   }catch(_){finish(false);}
+  });
+  if(ok){youtubeProof[it.id]={videoId:it.videoId,testedAt:Date.now()};persistYoutubeProof();}
+  else if(active()){delete youtubeProof[it.id];persistYoutubeProof();}
+ }
+ if(visibleYoutubeCheck===controller)visibleYoutubeCheck=null;
+ if(host.isConnected&&state.view==='live')render();
+}
 function requestYoutubeApi(){
  if(window.YT&&typeof window.YT.Player==='function'){connectYoutubeApiPlayer();return;}
  if(youtubeApiRequested)return;
@@ -3393,7 +3455,7 @@ function openOfficialEmbed(it){
  const local=(location.protocol==='content:'||location.protocol==='file:');
  const origin=location.protocol==='https:'?'&origin='+encodeURIComponent(location.origin):'';
  const src='https://www.youtube.com/embed/'+encodeURIComponent(vid)+'?autoplay=1&playsinline=1&enablejsapi=1&rel=0'+origin;
- const session={id:++youtubeSessionSerial,bound:false,mutedFallback:false};
+ const session={id:++youtubeSessionSerial,bound:false,mutedFallback:false,channelId:it.id};
  youtubeSession=session;
  els.player.innerHTML=`<div class="player-modal-root"><div class="player-shell" role="dialog" aria-modal="true" aria-label="Reproductor oficial de ${esc(it.short||it.title)}"><div class="player-top"><b>▶ ${esc(it.title)}${it.kind==='live'?' · En vivo':''}</b><div class="player-actions"><button class="player-fullscreen" data-action="toggle-player-fullscreen" aria-label="Pantalla completa" title="Pantalla completa" aria-pressed="false">⛶ Pantalla completa</button><button class="player-close" data-action="close-player">✕ Salir</button></div></div><div class="official-iframe-wrap"><iframe id="nevix-youtube-iframe" class="official-youtube-player" src="${src}" title="${esc(it.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" loading="eager" frameborder="0"></iframe></div><div class="player-status" id="youtube-player-status" aria-live="polite">▶ Iniciando transmisión automáticamente… No es necesario pulsar Play otra vez.</div><div class="player-tools"><button class="btn btn-sm" id="youtube-unmute" data-action="unmute-youtube" hidden>🔊 Activar sonido</button></div></div></div>`;
  // El iframe se crea durante el mismo toque. autoplay=1 actúa aun si la API carga tarde.
@@ -3403,6 +3465,7 @@ function openOfficialEmbed(it){
 }
 
 function play(id,sourceIndex=0){
+ stopVisibleYoutubeCheck();
  const it=itemById(id);
  if(!it)return toast('No encontramos el contenido.');
  if(it.privateMovie&&(!it.url||Date.now()>Number(it.privateUrlExpires||0)-60000)){void playPrivateFilm(it);return;}
@@ -3448,7 +3511,7 @@ function play(id,sourceIndex=0){
  const stopAndReport=(reason,detail)=>{stopTimer();errors.push(detail||reason);
    if(it.featuredVenezuela&&!playing&&sourceIndex+1<sourceOptions.length){if(failingOver)return;failingOver=true;status.textContent='La señal '+(sourceIndex+1)+' no respondió. Probando otra fuente pública…';const retryFrom=state.playing;setTimeout(()=>{if(!stopped&&state.playing===retryFrom)play(id,sourceIndex+1);},250);return;}
    issue(it.featuredVenezuela?'Sin transmisión compatible de '+it.title+' en este dispositivo. Utiliza el enlace oficial de abajo o vuelve a intentarlo más tarde.':reason,detail);
-   if(it.verifiedManifest&&!it.featuredVenezuela&&!playing&&!state.failedStreams.includes(it.id)){state.failedStreams.push(it.id);store();toast('Señal retirada de tu catálogo porque no pudo reproducirse.');}
+   if(it.kind==='live'&&!state.failedStreams.includes(it.id)){state.failedStreams.push(it.id);invalidateLive(it.id);toast('Señal retirada de tu catálogo porque no pudo reproducirse.');}
  };
  const watchdogAfter=(ms,why,run)=>{
    stopTimer();const n=attempt;
@@ -3644,7 +3707,7 @@ async function requestPrivateDubbing(id){
 
 function closePlayer(){const it=itemById(state.playing);const video=$('#nevix-player');if(it&&video&&it.kind!=='live'&&Number.isFinite(video.duration)&&video.duration){state.progress[it.id]={time:Math.floor(video.currentTime),duration:Math.floor(video.duration)};store();}disposePlayer();render();}
 function toggleFavorite(id){if(!itemById(id))return;const n=state.favorites.indexOf(id);if(n>=0)state.favorites.splice(n,1);else state.favorites.push(id);store();if(state.selected){openDetail(state.selected);}else render();toast(n>=0?'Quitado de Mi lista':'Añadido a Mi lista');}
-function deleteItem(id){const it=itemById(id);if(!it||!confirm(`¿Eliminar "${it.title}" de tu catálogo? No borrará el video original.`))return;state.items=state.items.filter(x=>x.id!==id);state.sessionItems=state.sessionItems.filter(x=>x.id!==id);state.favorites=state.favorites.filter(x=>x!==id);delete state.progress[id];store();render();toast('Contenido eliminado.');}
+function deleteItem(id){const it=itemById(id)||state.items.find(x=>x.id===id)||state.sessionItems.find(x=>x.id===id);if(!it||!confirm(`¿Eliminar "${it.title}" de tu catálogo? No borrará el video original.`))return;state.items=state.items.filter(x=>x.id!==id);state.sessionItems=state.sessionItems.filter(x=>x.id!==id);state.favorites=state.favorites.filter(x=>x!==id);delete state.progress[id];store();render();toast('Contenido eliminado.');}
 async function hashPin(pin){const encoded=new TextEncoder().encode('NEVIX-PIN-LOCAL:'+pin);const buffer=await crypto.subtle.digest('SHA-256',encoded);return Array.from(new Uint8Array(buffer)).map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function setPin(){let pin=prompt('Elige un PIN numérico de 4 a 12 dígitos para este dispositivo:');if(pin===null)return;if(!/^\d{4,12}$/.test(pin))return toast('El PIN debe tener entre 4 y 12 números.');let confirmation=prompt('Repite tu nuevo PIN:');if(pin!==confirmation)return toast('Los PIN no coinciden.');try{state.pinHash=await hashPin(pin);state.unlocked=true;store();render();toast('PIN local configurado.');}catch(e){toast('No se puede configurar el PIN en este contexto. Usa HTTPS.');}}
 async function unlockPin(pin){if(!/^\d{4,12}$/.test(pin))return toast('PIN incorrecto.');if(await hashPin(pin)===state.pinHash){state.unlocked=true;render();toast('Panel desbloqueado.');}else toast('PIN incorrecto.');}
@@ -3664,7 +3727,7 @@ function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perd
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
  switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-draft-remove':privateRemoveUploadDraft(id);break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
   case 'private-cancel-upload':void privateCancelUploadRow(id,false);break;case 'private-remove-upload':void privateCancelUploadRow(id,true);break;
-  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':loadCountry($('#country-select')?.value||'ve',true);break;case 'quick-country':loadCountry(target.dataset.code);break;case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
+  case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':{const code=$('#country-select')?.value||'ve';await loadCountry(code,true);if(code==='doc')void verifyYoutubeVisible();break;}case 'live-check-youtube':void verifyYoutubeVisible();break;case 'quick-country':{const code=target.dataset.code;await loadCountry(code);if(code==='doc')void verifyYoutubeVisible();break;}case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
 document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='private-film-file'){privatePrepareUploadDrafts();return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
