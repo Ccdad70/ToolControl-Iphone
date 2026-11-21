@@ -171,7 +171,13 @@ footer{border-top-color:#ffffff11;color:#8591a5}
 .tile-grid{grid-template-columns:repeat(auto-fill,minmax(162px,1fr));gap:19px 15px}
 .poster-card{display:block;text-align:left;border:0;background:transparent;border-radius:17px;color:inherit;overflow:visible;transition:transform .2s ease}
 .poster-card .poster-img{aspect-ratio:2/3;border-radius:16px;border:1px solid #ffffff1f;background:#1c2738;box-shadow:0 10px 22px #0006;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
-.poster-card.type-live .poster-img{aspect-ratio:16/10}
+.poster-card.type-live .poster-img{aspect-ratio:16/10;background:#eceff3}
+.live-logo-art{position:relative;width:100%;height:100%;min-height:0;display:flex;align-items:center;justify-content:center;background:#eceff3;color:#172033;overflow:hidden}
+.poster-card.type-live .poster-img .channel-logo-image,.live-logo-art .channel-logo-image{width:100%;height:100%;object-fit:contain;padding:12px 12px 34px;box-sizing:border-box;display:block}
+.live-logo-art [hidden]{display:none!important}
+.live-logo-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;padding:12px 12px 32px;width:100%;height:100%}
+.live-logo-fallback strong{font-size:clamp(14px,3vw,20px);color:#172033}.live-logo-fallback small{font-size:10px;color:#586273}
+.cinema-channel .live-logo-art .channel-logo-image{padding:8px}
 .poster-card .poster-img img{width:100%;height:100%;object-fit:cover}
 .poster-card:hover .poster-img,.poster-card:focus-visible .poster-img{transform:translateY(-5px) scale(1.015);border-color:#a394ff;box-shadow:0 18px 33px #0009,0 0 0 2px #8776ff26}
 .poster-meta{margin-top:10px}
@@ -1446,8 +1452,10 @@ function parseCountryPlaylist(text,country){
   const group=(meta.match(/group-title\s*=\s*["']([^"']+)["']/i)||[])[1]||'TV gratuita';
   const source=(community?'Nexonic comunidad verificada · ':'Nexonic oficial · ')+country[2];
   const description=community?'Emisión gratuita listada como comunidad verificada por Nexonic. NÉVIX comprueba si el manifiesto HLS es accesible desde tu Samsung; la inserción puede depender del emisor.':'Señal publicada gratuitamente por su emisor; NÉVIX comprueba el manifiesto HLS antes de mostrarla.';
-  const item=normalizeItem({kind:'live',title,short:title,category:country[1]+' '+country[2],url,source,description,direct:true,unverified:community});
-  if(item)items.push({...item,id:'official-'+country[0]+'-'+uniqueHash(url),flag:country[1],short:title,genre:group,verifiedManifest:false,source,countryCode:country[0],direct:true,unverified:community});
+  const image=(meta.match(/tvg-logo\s*=\s*["']([^"']+)["']/i)||[])[1]||'';
+   const channelId=(meta.match(/tvg-id\s*=\s*["']([^"']+)["']/i)||[])[1]||'';
+   const item=normalizeItem({kind:'live',title,short:title,category:country[1]+' '+country[2],url,source,description,image,direct:true,unverified:community});
+  if(item)items.push({...item,id:'official-'+country[0]+'-'+uniqueHash(url),flag:country[1],short:title,channelId,genre:group,verifiedManifest:false,source,countryCode:country[0],direct:true,unverified:community});
  }
  // Mostrar primero noticias y canales generales, sin presumir que los otros son de pago.
  items.sort((a,b)=>{const rank=x=>/news|noticias|general|public|cultura|educa/i.test(x.genre||'')?0:1;return rank(a)-rank(b);});
@@ -1567,6 +1575,7 @@ let activeCountryLoad=null;
 let countryLoadSerial=0;
 const countryRetryAt=Object.create(null);
 async function loadCountry(code,force=false){
+ void loadChannelLogos();
  const country=COUNTRIES.find(x=>x[0]===code);
  if(!country)return toast('Selecciona un país válido.');
  const countryName=country[1]+' '+country[2];
@@ -1677,7 +1686,7 @@ const state={
  progress:typeof saved?.progress==='object'&&saved.progress? saved.progress:{},
  pinHash:typeof saved?.pinHash==='string'?saved.pinHash:'',
  unlocked:false,
- sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&saved?.playbackProbeVersion===3&&Date.now()-Number(x.testedAt||0)<30*60000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===3?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:cachedCatalogList('movieRecentItems'),moviePopularItems:cachedCatalogList('moviePopularItems'),moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:cachedCatalogList('seriesRecentItems'),seriesPopularItems:cachedCatalogList('seriesPopularItems'),seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
+ sessionItems:[],worldChannels:Array.isArray(saved?.worldChannels)?saved.worldChannels.filter(x=>!isRemovedVeChannel(x)).slice(0,2000).map(x=>{const y=normalizeItem(x);return y&&/^https:\/\//.test(y.url)&&x.browserPlayable===true&&saved?.playbackProbeVersion===3&&Date.now()-Number(x.testedAt||0)<30*60000&&/^(Nexonic|Lista pública experimental)/.test(String(x.source||''))?{...y,id:x.id,flag:String(x.flag||'🌍').slice(0,5),countryCode:x.countryCode,channelId:String(x.channelId||'').slice(0,160),verifiedManifest:true,browserPlayable:true,verifiedPlayback:true,testedAt:x.testedAt,source:x.source,direct:true,unverified:/(comunidad|experimental)/.test(String(x.source||'')),short:y.title}:null;}).filter(Boolean):[],failedStreams:Array.isArray(saved?.failedStreams)?saved.failedStreams.filter(x=>typeof x==='string').slice(0,1000):[],loadedCountries:Array.isArray(saved?.loadedCountries)&&saved?.playbackProbeVersion===3?saved.loadedCountries.filter(c=>COUNTRIES.some(x=>x[0]===c)).slice(0,57):[],loadingCountry:null,loadProgress:'',liveQuery:'',movieQuery:'',movieRecentItems:cachedCatalogList('movieRecentItems'),moviePopularItems:cachedCatalogList('moviePopularItems'),moviePage:{recent:0,popular:0},movieTotalPages:{recent:0,popular:0},movieLoading:{recent:false,popular:false},movieError:'',movieAttempted:false,seriesQuery:'',seriesRecentItems:cachedCatalogList('seriesRecentItems'),seriesPopularItems:cachedCatalogList('seriesPopularItems'),seriesPage:{recent:0,popular:0},seriesTotalPages:{recent:0,popular:0},seriesLoading:{recent:false,popular:false},seriesError:'',seriesAttempted:false,liveShown:100,showOnlyPlayable:true,view:'inicio',category:'Todos',search:'',selectedChannel:'embed-co-caracol',selected:null,
  hls:null,playing:null,lastSave:0
 };
 const REPLACED_OFFICIAL_IDS=new Set(['official-us-abc','official-us-cbs','official-de-dw','official-fr-france24']);
@@ -1697,7 +1706,57 @@ function youtubeCandidates(){return [...DOCUMENTARY_EMBEDS,...OFFICIAL_EMBEDS,..
 function verifiedYoutubeItems(){return youtubeCandidates().map(it=>{const p=youtubeProof[it.id];return {...it,browserPlayable:p?.videoId===it.videoId,verifiedPlayback:p?.videoId===it.videoId,testedAt:p?.testedAt};}).filter(it=>isVerifiedLive(it));}
 function persistYoutubeProof(){try{localStorage.setItem(YOUTUBE_PROOF_KEY,JSON.stringify(youtubeProof));}catch(_){}}
 function invalidateLive(id){if(!id)return;delete youtubeProof[id];persistYoutubeProof();state.worldChannels=state.worldChannels.filter(x=>x.id!==id);store();}
-function allItems(){return [...verifiedYoutubeItems(),...movieCatalogItems(),...seriesCatalogItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&!state.failedStreams.includes(x.id)&&isVerifiedLive(x)),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+function channelNameKey(name){
+ return String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/(?:\s*[·-]\s*(?:canal oficial|directo oficial|señal digital 24\/7))$/i,'').replace(/\s*\((?:hd|sd|[0-9]{3,4}p)\)\s*$/i,'').replace(/\s+(?:hd|sd|[0-9]{3,4}p)$/i,'').replace(/[^a-z0-9]/g,'');
+}
+function dedupeLiveChannels(items){
+ const out=[],seen=new Set();
+ for(const it of items){
+  const name=channelNameKey(it.short||it.title);
+  const key=String(it.countryCode||it.category||'')+'|'+name;
+  if(name&&seen.has(key))continue;
+  if(name)seen.add(key);
+  out.push(it);
+ }
+ return out;
+}
+function allItems(){return [...dedupeLiveChannels([...verifiedYoutubeItems(),...state.worldChannels.filter(x=>!isRemovedVeChannel(x)&&!state.failedStreams.includes(x.id)&&isVerifiedLive(x))]),...movieCatalogItems(),...seriesCatalogItems(),...state.items.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x)),...state.sessionItems.filter(x=>x.kind!=='live'&&!isRetiredStarterTitle(x))];}
+let channelLogoDirectory=null,channelLogoRequest=null;
+function makeLogoDirectory(channels,logos){
+ const ids=new Map(),names=new Map(),byId=new Map();
+ for(const c of channels){if(!c?.id||c.is_nsfw||c.closed)continue;ids.set(c.id.toLowerCase(),c.id);for(const n of [c.name,...(Array.isArray(c.alt_names)?c.alt_names:[])]){const key=String(c.country||'').toLowerCase()+'|'+channelNameKey(n);if(key.endsWith('|'))continue;if(names.has(key)&&names.get(key)!==c.id)names.set(key,null);else names.set(key,c.id);}}
+ for(const l of logos){if(!l?.in_use||l.feed||!l.channel||!isChannelLogoURL(l.url))continue;const score=Math.min(Number(l.width)||0,2000)*Math.min(Number(l.height)||0,2000)+(l.format==='SVG'?5000000:0);const old=byId.get(l.channel);if(!old||score>old.score)byId.set(l.channel,{url:l.url,score});}
+ return {ids,names,byId};
+}
+function isChannelLogoURL(url){try{const u=new URL(url);return u.protocol==='https:'&&!u.username&&!u.password&&String(url).length<=3000;}catch(_){return false;}}
+function logoForChannel(it,directory=channelLogoDirectory){
+ const explicit=it?.image;
+ if(it?.embedType!=='youtube'&&isChannelLogoURL(explicit))return explicit;
+ const country=String(it?.countryCode||COUNTRIES.find(c=>it?.category===c[1]+' '+c[2])?.[0]||'').toLowerCase();
+ if(directory){
+  const rawId=String(it?.channelId||'').toLowerCase();
+  const id=directory.ids.get(rawId)||directory.names.get(country+'|'+channelNameKey(it?.short||it?.title));
+  const logo=directory.byId.get(id)?.url;if(logo)return logo;
+ }
+ return '';
+}
+async function loadChannelLogos(){
+ if(channelLogoDirectory||channelLogoRequest)return channelLogoRequest;
+ channelLogoRequest=(async()=>{
+  try{
+   const get=async name=>{const r=await fetch('https://iptv-org.github.io/api/'+name+'.json',{signal:AbortSignal.timeout(12000),credentials:'omit'});if(!r.ok)throw Error('logo directory');const a=await r.json();if(!Array.isArray(a))throw Error('invalid directory');return a;};
+   const [channels,logos]=await Promise.all([get('channels'),get('logos')]);channelLogoDirectory=makeLogoDirectory(channels,logos);
+   // Replace only the live artwork nodes: do not interrupt playback, admin drafts or verification.
+   for(const el of document.querySelectorAll('[data-live-logo-id]')){const id=el.dataset.liveLogoId,it=allItems().find(x=>x.id===id);if(it){const wrapper=document.createElement('div');wrapper.innerHTML=liveArtwork(it);if(wrapper.firstElementChild)el.replaceWith(wrapper.firstElementChild);}}
+  }catch(_){}finally{channelLogoRequest=null;}
+ })();return channelLogoRequest;
+}
+function liveArtwork(it){
+ const logo=logoForChannel(it),candidate=!logo&&it.embedType==='youtube'&&isChannelLogoURL(it.image)?it.image:'';
+ const src=logo||candidate;
+ const fallback='<div class="live-logo-fallback"'+(src?' hidden':'')+'><strong>'+esc(it.short||it.title)+'</strong><small>Logo no disponible</small></div>';
+ return '<div class="live-logo-art" data-live-logo-id="'+esc(it.id)+'">'+(src?'<img class="channel-logo-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+esc(src)+'" alt="'+esc((logo?'Logotipo de ':'Imagen de ')+(it.short||it.title))+'" onerror="this.hidden=true;this.nextElementSibling.hidden=false">':'')+fallback+'</div>';
+}
 
 const HLS_DIAGNOSTIC_SAMPLE={id:'nevix-hls-test',title:'Prueba del reproductor HLS (no es TV)',short:'Prueba HLS',kind:'live',category:'Diagnóstico',source:'Video público de pruebas de reproducción',url:'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',description:'Video técnico que permite comprobar la compatibilidad del reproductor. No es un canal de televisión.',direct:true,unverified:true};
 function itemById(id){return id===HLS_DIAGNOSTIC_SAMPLE.id?HLS_DIAGNOSTIC_SAMPLE:allItems().find(it=>it.id===id);}
@@ -1711,6 +1770,7 @@ function movieCover(it){
  return '<div class="official-art tone-'+variant+'" role="img" aria-label="Portada ilustrativa de '+esc(title)+'" style="position:relative;display:flex;flex-direction:column;justify-content:space-between;height:100%;padding:18px;background:linear-gradient(145deg,#102244,#33233e 58%,#0a152b);border:1px solid #354764"><small style="color:#99e0e8;letter-spacing:.14em;font-size:11px">'+(isSeries?'NÉVIX · SERIES':'NÉVIX · CINE')+'</small><span style="font-size:45px;text-align:center;opacity:.65">'+(isSeries?'📺':'🎬')+'</span><strong style="font-size:18px;line-height:1.25;color:white;text-shadow:0 2px 8px #000">'+esc(title)+'</strong><small style="opacity:.83;color:#dae8fc">'+esc(it.year||'')+' · PORTADA ILUSTRATIVA</small></div>';
 }
 function artwork(it){
+ if(it?.kind==='live')return liveArtwork(it);
  const src=DEMO_IMAGES[it?.image]||it?.image||'';
  const safe=typeof src==='string'&&(/^https:\/\//.test(src)||/^data:image\/jpeg;base64,/.test(src)||/^assets\/[\w.\-/]+\.(png|jpe?g|webp)$/i.test(src));
  if(it?.kind==='movie'||(it?.kind==='series'&&it.watchmode)){
@@ -3851,7 +3911,7 @@ async function saveNetflixSettings(enabled){
 }
 
 // No se registra un service worker: evita recibir versiones antiguas de la interfaz.
-if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();void loadNetflixSettings();
+if(!saved){try{localStorage.setItem(DB,JSON.stringify({items:state.items,favorites:state.favorites,progress:state.progress,pinHash:state.pinHash,worldChannels:state.worldChannels.slice(0,1800),loadedCountries:state.loadedCountries}));}catch(_){}}const initial=location.hash.slice(1);state.view=initial==='netflix'||initial==='free'?'movie':NAMES[initial]?initial:'inicio';if(initial==='netflix'||initial==='free')location.hash='movie';render();void loadChannelLogos();void loadNetflixSettings();
 void privateCheckStatus();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void loadNetflixSettings();});
 setInterval(()=>{if(document.visibilityState==='visible')void loadNetflixSettings();},45000);

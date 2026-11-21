@@ -1,0 +1,21 @@
+name: Nevix channel logos checks
+on:
+  push:
+    branches: [nevix-channel-logos-20261121]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          python3 - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('nevix-web/index.html').read_text()
+          for i,x in enumerate(re.findall(r'<script\b[^>]*>(.*?)</script>',s,re.S|re.I)):
+              if x.strip(): pathlib.Path('/tmp/nevix-script-'+str(i)+'.js').write_text(x)
+          PY
+          for f in /tmp/nevix-script-*.js; do node --check "$f"; done
+      - run: node --test tests/nevix-verified-live.test.mjs tests/nevix-channel-logos.test.mjs
