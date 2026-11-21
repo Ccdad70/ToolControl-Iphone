@@ -1,6 +1,5 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { createPrivateUploads } from './private-uploads.mjs';
-import { createMegaImport } from './private-mega-import.mjs';
 import { createPrivateRemux } from './private-remux-r2.mjs';
 import { createPrivateDubbing } from './private-dubbing.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -234,7 +233,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
   return{ready:rows.filter(x=>x.status==='ready').length,pending:rows.filter(x=>!['ready','backup'].includes(x.status)).length,autoProcessing:true,jobId:result.job.jobId,movieId:entry.id};
  }
  const uploads=configured?createPrivateUploads({client,bucket,reply:(res,status,data)=>send(res,status,data),readJson:body,onComplete:autoValidateUploadedMovie}):null;
- const megaImport=uploads?createMegaImport({uploads}):null;
  async function recoverAutoJobs(){
   if(!configured||!uploadReady)return;
   let rows=await sync(true);
@@ -388,15 +386,6 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     const match=await tmdbSearchPoster(title,year,'movie');
     if(!match?.image)return reply(res,200,{ok:true,found:false,message:'No se encontró una portada exacta. Podrás revisarla después de subir la película.'});
     return reply(res,200,{ok:true,found:true,image:match.image,description:match.overview||'',matchedTitle:match.matchedTitle||title,matchedYear:match.matchedYear||'',title,year});
-   }
-   if(url.pathname.startsWith('/api/private/import/')){
-    if(url.pathname==='/api/private/import/list'&&req.method==='GET')return reply(res,200,{jobs:megaImport.list()});
-    if(url.pathname==='/api/private/import/start'&&req.method==='POST'){
-     if(!uploadReady)return reply(res,503,{error:'storage_not_ready',message:'El almacenamiento todavía no está disponible.'});
-     return reply(res,202,megaImport.start(await body(req)));
-    }
-    if(url.pathname==='/api/private/import/cancel'&&req.method==='POST')return reply(res,200,megaImport.cancel((await body(req)).id));
-    return reply(res,405,{error:'method_not_allowed'});
    }
    if(await uploads.handle(req,res,url))return;
    if(url.pathname==='/api/private/admin/library'&&req.method==='GET'){
