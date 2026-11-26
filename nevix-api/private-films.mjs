@@ -392,7 +392,7 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    if(url.pathname==='/api/private/admin/library'&&req.method==='GET'){
     const rows=url.searchParams.get('refresh')==='1'?await sync(true):await catalogSnapshot();
     return reply(res,200,{files:rows.map(x=>({
-     id:x.id,title:x.title,year:x.year||'',status:x.status,size:x.size||0,
+     id:x.id,title:x.title,year:x.year||'',status:x.status,size:x.size||0,image:x.image||'',
      remuxed:x.remuxed===true,verified:x.verified===true,validationError:x.validationError||'',
      backupOf:rows.find(y=>y.backupKey===x.key)?.id||'',job:remux?.findByFilm(x.id)||null
     })),count:rows.length});

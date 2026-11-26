@@ -403,6 +403,11 @@ footer{color:#a88d94;border-color:#48121f}
 <style id="nevix-r2-library-responsive">
 #private-library-list{min-width:0;max-width:100%}
 #private-library-list .r2-library-row{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:12px;margin:8px 0;min-width:0;max-width:100%}
+#private-library-list .r2-library-heading{display:grid;grid-template-columns:clamp(52px,16vw,72px) minmax(0,1fr);align-items:center;gap:12px;min-width:0}
+#private-library-list .r2-library-poster{position:relative;width:100%;aspect-ratio:2/3;overflow:hidden;border-radius:8px;border:1px solid #414963;background:#192236}
+#private-library-list .r2-library-poster img{display:block;width:100%;height:100%;object-fit:contain}
+#private-library-list .r2-library-poster .r2-poster-fallback{display:flex;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-align:center;font-size:10px;line-height:1.2;padding:3px;color:#aebbd2;overflow-wrap:anywhere}
+#private-library-list .r2-library-poster [hidden]{display:none!important}
 #private-library-list .r2-library-info{display:block;min-width:0;max-width:100%}
 #private-library-list .r2-library-info b,#private-library-list .r2-library-info small{display:block;max-width:100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 #private-library-list .r2-library-info b{font-size:14px;line-height:1.4}
@@ -2227,6 +2232,12 @@ async function privateSyncAdmin(){
 }
 
 
+function privateLibraryPoster(it){
+ const src=typeof it?.image==='string'?it.image:'';
+ const valid=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(src)||src.length<=130000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(src);
+ const fallback='<span class="r2-poster-fallback"'+(valid?' hidden':'')+'><span aria-hidden="true">🎬</span><span>'+(valid?'No disponible':'Sin portada')+'</span></span>';
+ return '<span class="r2-library-poster">'+(valid?'<img loading="lazy" decoding="async" src="'+esc(src)+'" alt="Portada de '+esc(it.title||'película')+'" onerror="this.hidden=true;this.nextElementSibling.hidden=false">':'')+fallback+'</span>';
+}
 async function privateManageR2(){
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  const area=document.getElementById('private-library-list');
@@ -2251,7 +2262,7 @@ async function privateManageR2(){
      const state=names[it.status]||it.status||'Desconocido';
      const extra=it.status==='backup'?' · Respaldo, no aparece a los espectadores':it.status==='processing'?' · '+(phase?'Etapa: '+phase+' ('+(Number(job.percent)||0)+' %)':'Preparando en servidor'):it.status==='processing_failed'?' · '+String(it.validationError||'Revisa el archivo'):'';
      const title=esc(it.title||'Película sin título');
-     return '<div class="source-row r2-library-row"><span class="r2-library-info"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span>'
+     return '<div class="source-row r2-library-row"><div class="r2-library-heading">'+privateLibraryPoster(it)+'<span class="r2-library-info"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span></div>'
        +'<div class="actions r2-library-actions">'
        +(it.status==='ready'||it.status==='review'?'<button class="btn btn-sm" type="button" data-action="private-r2-edit" data-id="'+id+'">✎ Editar título y portada</button>':'')
        +(it.status==='ready'?'<button class="btn btn-sm" type="button" data-action="private-dubbing-start" data-id="'+id+'">🌐 Crear doblaje español (IA)</button>':'')
