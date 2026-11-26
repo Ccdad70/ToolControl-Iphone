@@ -1,5 +1,5 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
-import { createPrivateUploads } from './private-uploads.mjs';
+import { createPrivateUploads, validateManualPoster } from './private-uploads.mjs';
 import { createPrivateRemux } from './private-remux-r2.mjs';
 import { createPrivateDubbing } from './private-dubbing.mjs';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -215,7 +215,8 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
    // Search the poster before converting the video; failure never removes the uploaded file.
    entry.title=requestedTitle;entry.year=requestedYear;
    entry.image='';entry.description='';
-   try{
+   if(validateManualPoster(metadata.manualPoster)){entry.image=metadata.manualPoster;}
+   else try{
     const match=await tmdbSearchPoster(requestedTitle,requestedYear,'movie');
     if(match?.image){entry.image=match.image;entry.description=match.overview||'';}
    }catch(err){console.log('NÉVIX upload poster search postponed; movie saved, title retained');}

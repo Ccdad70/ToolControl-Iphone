@@ -2472,20 +2472,53 @@ function privateFilmNameHint(filename){
 function privateUploadDraftMarkup(){
  if(!privateUploadDrafts.length)return '';
  return '<div class="panel-card" style="padding:12px"><h3 style="margin:0 0 6px">Títulos y portadas antes de subir</h3>'
- +'<p class="hint">Revisa cada título; NÉVIX lo guardará en R2 y buscará su portada al finalizar la transferencia.</p>'
+ +'<p class="hint">Revisa cada título. NÉVIX buscará la portada automáticamente si no eliges una imagen propia.</p>'
  +privateUploadDrafts.map((d,i)=>{
-  const goodPoster=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(d.image||''));
-  return '<div style="border-top:1px solid #414963;padding:12px 0">'
+   return '<div style="border-top:1px solid #414963;padding:12px 0">'
    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
    +'<b style="min-width:0;overflow-wrap:anywhere">'+esc(d.file.name)+'</b>'
    +'<button class="btn btn-danger btn-sm" type="button" data-action="private-upload-draft-remove" data-id="'+i+'" aria-label="Quitar '+esc(d.file.name)+' de los archivos seleccionados" '+''+'>✕ Quitar archivo</button></div>'
    +'<label class="field">Título real<input type="text" data-upload-draft="title" data-index="'+i+'" maxlength="130" value="'+esc(d.title)+'" placeholder="Nombre de la película"></label>'
    +'<label class="field">Año (opcional)<input type="text" inputmode="numeric" data-upload-draft="year" data-index="'+i+'" maxlength="4" value="'+esc(d.year)+'" placeholder="Ej.: 2024"></label>'
    +'<button type="button" class="btn btn-sm" data-action="private-upload-poster" data-id="'+i+'">🎞 Buscar portada</button>'
+   +'<label class="field" style="margin-top:12px">Portada personalizada (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" data-upload-manual-poster="'+i+'" style="max-width:100%"></label>'
+   +(d.manualPoster||d.posterPending?'<button class="btn btn-sm" type="button" data-action="private-upload-clear-poster" data-id="'+i+'">Quitar portada personalizada</button>':'')
    +'<div id="private-upload-draft-poster-'+i+'" class="hint" style="margin-top:8px">'
-   +(goodPoster?'<img src="'+esc(d.image)+'" alt="Portada de '+esc(d.title)+'" loading="lazy" style="width:120px;border-radius:9px;display:block;margin:5px 0">':'')
-   +esc(d.posterMessage||(goodPoster?'Portada encontrada; confirma que corresponda a la película.':'La portada también se buscará automáticamente al finalizar.'))+'</div></div>';
+   +privateUploadPosterPreview(d)+'</div></div>';
  }).join('')+'</div>';
+}
+function privateUploadPosterPreview(d){
+ const goodPoster=/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(d.image||''));
+ const image=d.manualPoster||(goodPoster?d.image:'');
+ return (image?'<img src="'+esc(image)+'" alt="Vista previa de portada" style="width:120px;max-width:100%;border-radius:9px;display:block;margin:5px 0">':'')
+  +esc(d.posterPending?'Preparando portada personalizada…':d.manualPoster?'Portada personalizada seleccionada. Se guardará con el video.':d.posterMessage||(goodPoster?'Portada encontrada; confirma que corresponda a la película.':'La portada también se buscará automáticamente al finalizar.'));
+}
+function privateRefreshDraftPoster(d){
+ const i=privateUploadDrafts.indexOf(d);
+ if(i<0)return;
+ const area=document.getElementById('private-upload-drafts');
+ if(area)area.innerHTML=privateUploadDraftMarkup();
+}
+async function privateSelectUploadPoster(index,file){
+ privateReadUploadDraftValues();
+ const d=privateUploadDrafts[Number(index)];if(!d||!file)return;
+ const version=d.posterVersion=(d.posterVersion||0)+1;
+ d.posterPending=true;d.posterMessage='';privateRefreshDraftPoster(d);
+ try{
+  const image=await preparePrivateManualPoster(file);
+  if(d.posterVersion!==version||!privateUploadDrafts.includes(d))return;
+  d.manualPoster=image;d.image='';
+ }catch(error){
+  if(d.posterVersion===version){d.posterMessage=String(error.message||'No se pudo preparar la imagen.');toast(d.posterMessage);}
+ }finally{
+  if(d.posterVersion===version){d.posterPending=false;privateReadUploadDraftValues();privateRefreshDraftPoster(d);}
+ }
+}
+function privateClearDraftPoster(index){
+ privateReadUploadDraftValues();
+ const d=privateUploadDrafts[Number(index)];if(!d)return;
+ d.posterVersion=(d.posterVersion||0)+1;d.posterPending=false;d.manualPoster='';d.image='';
+ d.posterMessage='Se buscará la portada automáticamente al finalizar.';privateRefreshDraftPoster(d);
 }
 function privatePrepareUploadDrafts(){
  const input=document.getElementById('private-film-file');
@@ -2497,7 +2530,7 @@ function privatePrepareUploadDrafts(){
  for(const file of picked){
   const token=privateFileToken(file);
   const previous=current.get(token);
-  current.set(token,previous?{...previous,file}:{file,...privateFilmNameHint(file),image:'',posterMessage:''});
+  if(previous){previous.file=file;current.set(token,previous);}else current.set(token,{file,...privateFilmNameHint(file),image:'',posterMessage:'',manualPoster:''});
  }
  privateUploadDrafts=Array.from(current.values());
  const node=document.getElementById('private-upload-drafts');
@@ -2527,6 +2560,9 @@ async function privateFindUploadPoster(index){
  privateReadUploadDraftValues();
  const d=privateUploadDrafts[Number(index)];
  if(!d)return;
+ if(d.posterPending||d.manualPoster){toast('Quita la portada personalizada si deseas buscar otra automáticamente.');return;}
+ const version=d.posterVersion=(d.posterVersion||0)+1;
+ const titleAtSearch=d.title,yearAtSearch=d.year;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  const node=document.getElementById('private-upload-draft-poster-'+index);
  if(!key){toast('Introduce el código de administración antes de buscar la portada.');return;}
@@ -2537,11 +2573,12 @@ async function privateFindUploadPoster(index){
  if(node)node.textContent='Buscando portada en TMDB…';
  try{
   const res=await privateRequest('/api/private/upload/metadata-preview',key,true,'POST',{title:d.title,year:d.year});
+  if(d.posterVersion!==version||d.title!==titleAtSearch||d.year!==yearAtSearch||!privateUploadDrafts.includes(d))return;
   if(res.found&&/^https:\/\/image\.tmdb\.org\/t\/p\/w500\/[A-Za-z0-9_.-]+\.(?:jpg|png|webp)$/i.test(String(res.image||''))){
    d.image=res.image;d.posterMessage='Coincidencia: '+String(res.matchedTitle||d.title)+(res.matchedYear?' ('+res.matchedYear+')':'')+'. Confirma que sea la portada correcta.';
   }else{d.image='';d.posterMessage='No hay portada exacta. La película se guardará para revisarla desde Administración.';}
- }catch(e){d.image='';d.posterMessage='No se pudo buscar la portada: '+String(e.message||'error')+'. La película se podrá subir igualmente.';}
- if(node){const img=d.image?'<img src="'+esc(d.image)+'" alt="Portada encontrada" loading="lazy" style="width:120px;max-width:100%;border-radius:9px;display:block;margin:5px 0">':'';node.innerHTML=img+esc(d.posterMessage);}
+ }catch(e){if(d.posterVersion!==version||d.title!==titleAtSearch||d.year!==yearAtSearch)return;d.image='';d.posterMessage='No se pudo buscar la portada: '+String(e.message||'error')+'. La película se podrá subir igualmente.';}
+ const activeIndex=privateUploadDrafts.indexOf(d);if(activeIndex>=0){const preview=document.getElementById('private-upload-draft-poster-'+activeIndex);if(preview)preview.innerHTML=privateUploadPosterPreview(d);}
 }
 const NEVIX_UPLOAD_SESSION_KEY='nevix-r2-mp4-session-v2'; // Sesiones anteriores compatibles
 const NEVIX_MULTI_UPLOAD_SESSION_KEY='nevix-r2-multi-sessions-v1';
@@ -2853,7 +2890,7 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
    for(let attempt=1;attempt<=12;attempt++){
     if(row.cancelRequested)throw Error('Cancelación solicitada.');
     try{
-     upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||''});
+     upload=await privateRequest('/api/private/upload/start',key,true,'POST',{name:file.name,size:file.size,title:row.title||'',year:row.year||'',...(row.manualPoster?{manualPoster:row.manualPoster}:{})});
      break;
     }catch(error){
      if(error?.status!==429||attempt===12)throw error;
@@ -2913,7 +2950,7 @@ async function privateUploadOneFilm(file,key,row,allowLegacy=false){
   }
   if(row.cancelRequested)throw Error('Cancelación solicitada.');
   privateUpdateUploadRow(row,'Confirmando la película completa en R2…',99,'finalizing');
-  const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId});
+  const done=await privateRequest('/api/private/upload/complete',key,true,'POST',{uploadId:sessionId,...(row.manualPoster?{manualPoster:row.manualPoster}:{})});
   if(!done?.stored)throw Error('R2 todavía no confirmó la película completa.');
   sessionId='';row.sessionId='';privateClearUpload(file);
   if(done.autoProcessing&&done.jobId){
@@ -3008,6 +3045,7 @@ async function privateUploadAdmin(){
  privateAdminKeyMemory=key;
  privateReadUploadDraftValues();
  const drafts=privateUploadDrafts.slice();
+ if(drafts.some(d=>d.posterPending)){toast('La portada personalizada todavía se está preparando.');return;}
  if(!drafts.length){toast('Selecciona una o varias películas.');return;}
  const invalid=drafts.find(d=>String(d.title||'').trim().length<2||String(d.title||'').trim().length>130||d.year&&!/^(19|20)\d{2}$/.test(String(d.year)));
  if(invalid){toast('Revisa el título y año de cada película antes de subirla.');return;}
@@ -3018,6 +3056,7 @@ async function privateUploadAdmin(){
  try{authorized=await privateVerifyUploadKey(key);}
  finally{privateUploadAuthPending=false;}
  if(!authorized)return;
+ if(drafts.some(d=>d.posterPending)){toast('La portada personalizada todavía se está preparando.');return;}
  const currentlyQueued=new Set(privateBatchUploads.filter(r=>['queued','uploading','finalizing','processing'].includes(r.phase)&&!r.cancelRequested&&!r.removed).map(r=>r.token));
  const included=new Set();
  const selected=drafts.filter(d=>{
@@ -3028,7 +3067,7 @@ async function privateUploadAdmin(){
  if(!selected.length){toast('Los archivos ya están en la cola o se están subiendo.');return;}
  const rows=selected.map((d,i)=>({
   id:String(Date.now())+'-'+i+'-'+Math.random().toString(36).slice(2,6),
-  name:d.file.name,title:String(d.title||'').trim(),year:String(d.year||''),
+  name:d.file.name,title:String(d.title||'').trim(),year:String(d.year||''),manualPoster:d.manualPoster||'',
   size:d.file.size,file:d.file,token:privateFileToken(d.file),sessionId:'',uploadKey:key,
   percent:0,cancelRequested:false,removeAfterCancel:false,removed:false,waitingStart:false,
   phase:/\.(?:mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i.test(d.file.name)&&d.file.size>0&&d.file.size<5*1024*1024*1024?'queued':'failed',
@@ -3841,18 +3880,18 @@ function addItem(form){const fd=new FormData(form);let kind=String(fd.get('kind'
 function resetApp(){if(!confirm('¿Restaurar los datos de demostración? Se perderán los enlaces, favoritos y avances guardados.'))return;state.items=structuredClone(SAMPLES);state.worldChannels=[];state.loadedCountries=[];state.favorites=[];state.progress={};state.selectedChannel='direct-ve-canali';state.pinHash='';state.unlocked=false;store();render();toast('NÉVIX TV restaurado.');}
 
 document.addEventListener('click',async e=>{const target=e.target.closest('[data-action]');if(!target)return;const a=target.dataset.action;const id=target.dataset.id;
- switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();await loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});if(target.dataset.code==='doc')void verifyYoutubeVisible();break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-draft-remove':privateRemoveUploadDraft(id);break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
+ switch(a){case 'nav':go(target.dataset.view);break;case 'home-country':{homePreviewActive=false;stopHomePreview();state.view='live';state.category='Todos';location.hash='live';render();await loadCountry(target.dataset.code);window.scrollTo({top:0,behavior:'instant'});if(target.dataset.code==='doc')void verifyYoutubeVisible();break;}case 'home-preview':{if(!id)return;homePreviewId=id;homePreviewActive=true;render();break;}case 'home-expand':{const panel=document.getElementById('home-live-preview');if(!panel)break;if(!homePreviewActive){const candidate=homePreviewSource();if(!candidate)break;homePreviewId=candidate.id;homePreviewActive=true;render();}const activePanel=document.getElementById('home-live-preview');if(activePanel){const expand=!activePanel.classList.contains('nevix-preview-expanded');activePanel.classList.toggle('nevix-preview-expanded',expand);document.documentElement.classList.toggle('nevix-theater-lock',expand);document.body.classList.toggle('nevix-theater-lock',expand);const btn=activePanel.querySelector('[data-action="home-expand"]');if(btn){btn.textContent=expand?'↙':'⛶';btn.setAttribute('aria-label',expand?'Volver a pantalla normal':'Pantalla completa');btn.setAttribute('title',expand?'Pantalla normal':'Pantalla completa');}}break;}case 'private-login':await privateFamilyLogin();break;case 'private-upload-draft-remove':privateRemoveUploadDraft(id);break;case 'private-upload-poster':void privateFindUploadPoster(id);break;case 'private-upload-clear-poster':privateClearDraftPoster(id);break;case 'private-retry-upload':void privateRetryUpload(id);break;case 'private-retry-catalog':void loadPrivateMovies(true);break;case 'private-sync':void privateSyncAdmin();break;case 'private-upload':void privateUploadAdmin();break;
   case 'private-cancel-upload':void privateCancelUploadRow(id,false);break;case 'private-remove-upload':void privateCancelUploadRow(id,true);break;
   case 'private-remux-r2':void privateRemuxR2Admin();break;case 'private-dubbing-start':void requestPrivateDubbing(id);break;case 'private-library':void privateManageR2();break;case 'private-r2-edit':void privateEditR2(id);break;case 'private-r2-poster-preview':void privatePreviewR2Poster(id);break;case 'private-r2-edit-save':void privateSaveR2Metadata(id,target);break;case 'private-r2-edit-cancel':document.getElementById('private-edit-'+id)?.remove();break;case 'private-r2-delete':void privateDeleteR2(id);break;case 'private-review':void privateReviewAdmin();break;case 'private-approve':void privateApproveAdmin(id);break;case 'go-search':go('search');break;case 'toggle-menu':$('#sidebar').classList.toggle('open');break;case 'close-menu':$('#sidebar').classList.remove('open');break;case 'filter':state.category=target.dataset.category;render();break;case 'load-country':{const code=$('#country-select')?.value||'ve';await loadCountry(code,true);if(code==='doc')void verifyYoutubeVisible();break;}case 'live-check-youtube':void verifyYoutubeVisible();break;case 'quick-country':{const code=target.dataset.code;await loadCountry(code);if(code==='doc')void verifyYoutubeVisible();break;}case 'reset-country-filter':state.category='Todos';state.liveShown=100;render();break;case 'show-more-live':state.liveShown+=100;render();break;case 'refresh-movies':state.movieAttempted=false;state.moviePage={recent:0,popular:0};state.movieTotalPages={recent:0,popular:0};loadWatchmodeCatalog();break;case 'more-movies':void loadWatchmodeSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'refresh-series':state.seriesAttempted=false;state.seriesPage={recent:0,popular:0};state.seriesTotalPages={recent:0,popular:0};loadWatchmodeSeries();break;case 'more-series':void loadWatchmodeSeriesSection(target.dataset.section==='recent'?'recent':'popular',true);break;case 'select-channel':state.selectedChannel=id;render();play(id);break;case 'retry-stream':play(id);break;case 'unmute-youtube':unmuteYoutube();break;case 'unmute-player':{const video=$('#nevix-player');if(video){video.muted=false;video.play().catch(()=>{video.muted=true;toast('El navegador bloqueó el audio automático. Usa el volumen del reproductor.');});const button=$('#player-unmute');if(button)button.hidden=true;}break;}case 'switch-stream-engine':switchStreamEngine();break;case 'test-hls':play('nevix-hls-test');break;case 'show-player-diagnostics':{const d=$('#player-details');if(d){if(!d.textContent){const v=$('#nevix-player');d.textContent='Origen: '+location.protocol+' · HLS.js: '+(window.Hls?.isSupported?.()?'disponible':window.Hls?'no compatible':'no cargado')+' · HLS nativo: '+(v?.canPlayType('application/vnd.apple.mpegurl')||'no')+' · Red: '+(navigator.onLine?'en línea':'sin conexión')+' · La fuente y sus permisos deben verificarse por separado.';}d.hidden=!d.hidden;}break;}case 'detail':openDetail(id);break;case 'close-detail':closeDetail();break;case 'close-player':closePlayer();break;case 'toggle-player-fullscreen':togglePlayerFullscreen();break;case 'play':play(id);break;case 'favorite':toggleFavorite(id);break;case 'delete':deleteItem(id);break;case 'import-m3u':importM3uText($('#m3u-text')?.value||'');break;case 'export-json':downloadJSON();break;case 'set-pin':await setPin();break;case 'remove-pin':if(confirm('¿Quitar protección PIN en este dispositivo?')){state.pinHash='';store();render();}break;case 'lock':state.unlocked=false;render();break;case 'reset':resetApp();break;}
 });
 document.addEventListener('submit',async e=>{if(e.target.id==='add-form'){e.preventDefault();addItem(e.target);}else if(e.target.id==='unlock-form'){e.preventDefault();try{await unlockPin(String(new FormData(e.target).get('pin')||''));}catch{toast('No se pudo verificar el PIN. Usa HTTPS.');}}});
-document.addEventListener('change',e=>{if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='private-film-file'){privatePrepareUploadDrafts();return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){if(c[0]==='doc')void loadCountry(c[0]).then(()=>verifyYoutubeVisible());else loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
+document.addEventListener('change',e=>{if(e.target.dataset?.uploadManualPoster!==undefined){void privateSelectUploadPoster(e.target.dataset.uploadManualPoster,e.target.files?.[0]);return;}if(e.target.id==='netflix-catalog-switch'){void saveNetflixSettings(e.target.checked);return;}if(e.target.id==='nevix-film-language'){setPrivateAudio(e.target.value,true);return;}if(e.target.id==='private-film-file'){privatePrepareUploadDrafts();return;}if(e.target.id==='country-select'){const c=COUNTRIES.find(x=>x[0]===e.target.value);if(c){if(c[0]==='doc')void loadCountry(c[0]).then(()=>verifyYoutubeVisible());else loadCountry(c[0]);}}if(e.target.id==='live-direct-toggle'){state.showOnlyPlayable=e.target.checked;state.liveShown=100;render();}if(e.target.id==='m3u-file'){readFile(e.target.files?.[0],importM3uText);e.target.value='';}if(e.target.id==='json-file'){readFile(e.target.files?.[0],importJSON);e.target.value='';}});
 document.addEventListener('input',e=>{if(e.target.id==='private-admin-key'){privateAdminKeyMemory=e.target.value;return;}if(e.target.dataset?.uploadDraft){
  const i=Number(e.target.dataset.index),d=privateUploadDrafts[i],field=e.target.dataset.uploadDraft;
  if(d&&(field==='title'||field==='year')){
   const value=e.target.value.trim();
   if(d[field]!==value){d[field]=value;d.image='';d.posterMessage='La portada se volverá a buscar con el nuevo título y año.';
-   const preview=document.getElementById('private-upload-draft-poster-'+i);if(preview)preview.textContent=d.posterMessage;}
+   const preview=document.getElementById('private-upload-draft-poster-'+i);if(preview)preview.innerHTML=privateUploadPosterPreview(d);}
  }
  return;
 }if(e.target.id==='live-search'){const pos=e.target.selectionStart;state.liveQuery=e.target.value;state.liveShown=100;render();const inp=$('#live-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='movie-search'){const pos=e.target.selectionStart;state.movieQuery=e.target.value;render();const inp=$('#movie-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='series-search'){const pos=e.target.selectionStart;state.seriesQuery=e.target.value;render();const inp=$('#series-search');inp?.focus();try{inp?.setSelectionRange(pos,pos);}catch(_){}}if(e.target.id==='global-search'){const pos=e.target.selectionStart;state.search=e.target.value;const grid=$('#main .tile-grid');const result=chooseItems(allItems(),{q:state.search});const heading=$('#main .section-head h2');if(heading)heading.textContent=state.search?`${result.length} resultado(s)`:'Todo el contenido';if(grid)grid.innerHTML=seriesOnce(result.filter(x=>x.kind==='series')).concat(result.filter(x=>x.kind!=='series')).map(x=>card(x,true)).join('');else if(result.length){render({focusSearch:true});const inp=$('#global-search');inp?.setSelectionRange(pos,pos);}}});

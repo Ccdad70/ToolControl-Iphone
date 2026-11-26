@@ -10,6 +10,12 @@ const ALLOWED=/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i;
 const CONTENT_TYPES={mp4:'video/mp4',m4v:'video/x-m4v',mkv:'video/x-matroska',avi:'video/x-msvideo',mov:'video/quicktime',webm:'video/webm',wmv:'video/x-ms-wmv',mpeg:'video/mpeg',mpg:'video/mpeg',ts:'video/mp2t',m2ts:'video/mp2t'};
 const safeString=x=>String(x||'').trim();
 
+export function validateManualPoster(image){
+ if(typeof image!=='string'||image.length>130000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(image))return false;
+ const encoded=image.slice('data:image/jpeg;base64,'.length),bytes=Buffer.from(encoded,'base64');
+ return bytes.length>=4&&bytes.toString('base64')===encoded&&bytes[0]===255&&bytes[1]===216&&bytes[bytes.length-2]===255&&bytes[bytes.length-1]===217;
+}
+
 export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
  const active=new Map();
  const cancelled=new Map();
@@ -144,7 +150,9 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    if(url.pathname==='/api/private/upload/start'){
     if(cleanupRunning){respond(res,503,{error:'cleanup_in_progress',message:'Finalizando limpieza de subidas incompletas en R2. Vuelve a intentar.'});return true;}
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
-    const data=await readJson(req),name=safeString(data.name),size=Number(data.size);
+    const data=await readJson(req,140000),name=safeString(data.name),size=Number(data.size);
+    const manualPoster=data.manualPoster===undefined?'':data.manualPoster;
+    if(data.manualPoster!==undefined&&!validateManualPoster(manualPoster)){respond(res,400,{error:'invalid_poster',message:'La portada personalizada no es una imagen JPEG válida.'});return true;}
     const title=safeString(data.title).slice(0,130),year=safeString(data.year).slice(0,4);
     if(data.title!==undefined&&(title.length<2||title.length>130)||year&&!/^(19|20)\d{2}$/.test(year)){
      respond(res,400,{error:'invalid_movie_title',message:'Introduce un título de al menos dos caracteres y un año válido (opcional).'});return true;
@@ -160,7 +168,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
     const started=await client.send(new CreateMultipartUploadCommand({Bucket:bucket,Key:key,ContentType:type}));
     if(!started?.UploadId)throw {status:502,error:'multipart_start_failed',message:'Cloudflare R2 no pudo iniciar la subida.'};
     const id=randomUUID(),chunks=Math.ceil(size/CHUNK_SIZE);
-    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,title,year,parts:new Map(),updatedAt:Date.now(),busy:false,finalizing:false,cancelRequested:false,abortInProgress:false});
+    active.set(id,{name:cleaned,key,uploadId:started.UploadId,size,chunks,title,year,manualPoster,parts:new Map(),updatedAt:Date.now(),busy:false,finalizing:false,cancelRequested:false,abortInProgress:false});
     console.log('NÉVIX R2 upload start: format='+ext[1].toLowerCase()+' size_mb='+Math.round(size/1048576)+' chunks='+chunks);
     respond(res,200,{uploadId:id,chunkSize:CHUNK_SIZE,chunks});return true;
    }
@@ -205,7 +213,8 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
    }
    if(url.pathname==='/api/private/upload/complete'){
     if(req.method!=='POST'){respond(res,405,{error:'method_not_allowed'});return true;}
-    const data=await readJson(req),s=session(res,data.uploadId);if(!s)return true;
+    const data=await readJson(req,140000),s=session(res,data.uploadId);if(!s)return true;
+    if(data.manualPoster!==undefined&&!validateManualPoster(data.manualPoster)){respond(res,400,{error:'invalid_poster',message:'La portada personalizada no es una imagen JPEG válida.'});return true;}
     if(s.busy||s.parts.size!==s.chunks){respond(res,409,{error:'incomplete_upload',message:'Faltan partes por enviar.'});return true;}
     const parts=Array.from({length:s.chunks},(_,i)=>({PartNumber:i+1,ETag:s.parts.get(i+1)}));
     if(parts.some(x=>!x.ETag)){respond(res,409,{error:'missing_parts'});return true;}
@@ -226,7 +235,7 @@ export function createPrivateUploads({client,bucket,reply,readJson,onComplete}){
      console.log('NÉVIX R2 upload complete: size_mb='+Math.round(s.size/1048576)+' chunks='+s.chunks+' verified=true');
     }finally{s.busy=false;s.finalizing=false;}
     let result=null;
-    try{result=await onComplete(s.key,{title:s.title||'',year:s.year||''});}
+    try{result=await onComplete(s.key,{title:s.title||'',year:s.year||'',manualPoster:data.manualPoster||s.manualPoster||''});}
     catch(e){console.error('NÉVIX automatic MP4 verification setup failed after upload: '+safeString(e?.name||'Error'));}
     respond(res,200,{ok:true,stored:true,ready:result?.ready??null,pending:result?.pending??null,
       metadataPending:result===null,autoProcessing:result?.autoProcessing===true,jobId:result?.jobId||null,
