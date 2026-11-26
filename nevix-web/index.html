@@ -509,12 +509,17 @@ function parseM3U(text, source='M3U importada') {
   }
   return result;
 }
+function normalizeCatalogSearch(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es').trim();}
 function chooseItems(items, {kind, category='Todos', q=''}={}) {
-  const query = String(q).trim().toLocaleLowerCase('es');
+  const query = normalizeCatalogSearch(q);
   return items.filter(item => (!kind || item.kind === kind)
     && (category === 'Todos' || item.category === category)
     && (!query || [item.title,item.category,item.description,item.seriesName]
-      .some(part => String(part || '').toLocaleLowerCase('es').includes(query))));
+      .some(part => normalizeCatalogSearch(part).includes(query))));
+}
+function filterPrivateMovies(items, q){
+ const query=normalizeCatalogSearch(q);
+ return query?items.filter(it=>normalizeCatalogSearch(it.title).includes(query)):items;
 }
 
 const esc=escapeHTML;
@@ -2069,9 +2074,10 @@ function privateFilmRail(){
  if(!privateMovies.length)return '<section class="catalog-rail"><div class="section-head"><h2>Mis películas en NÉVIX</h2></div>'
   +'<p class="hint">'+esc(privateCatalogError||'Consultando películas guardadas en Cloudflare R2…')+'</p>'
   +'<button class="btn btn-sm" type="button" data-action="private-retry-catalog">↻ Volver a cargar películas</button></section>';
+ const matches=filterPrivateMovies(privateMovies,state.movieQuery);
  return '<section class="catalog-rail"><div class="section-head"><h2>Películas disponibles para reproducir</h2></div>'
  +(privateCatalogError?'<p class="hint">'+esc(privateCatalogError)+'</p>':'')
- +'<div class="tile-grid">'+privateMovies.map(it=>card(it,true)).join('')+'</div></section>';
+ +(matches.length?'<div class="tile-grid">'+matches.map(it=>card(it,true)).join('')+'</div>':'<p class="hint" role="status">No se encontraron películas para esta búsqueda.</p>')+'</section>';
 }
 async function privateRequest(route,code,adminAccess=false,method='GET',payload=null){
  const headers={};
@@ -3821,7 +3827,7 @@ renderCatalog=function(kind){
  return pageTitle(kind==='movie'?'Películas':'Series','Disfruta de las películas y series de tu biblioteca NÉVIX.')
   +'<div class="live-tools"><label class="live-search-label">⌕ <input type="search" id="'+field+'" value="'+esc(q)+'" placeholder="Buscar '+word+'…" autocomplete="off"></label></div>'
   +(kind==='movie'?privateFilmRail():'')
-  +(result.length?'<section class="catalog-rail"><div class="section-head"><h2>Mi biblioteca</h2></div><div class="tile-grid">'+result.map(it=>card(it,true)).join('')+'</div></section>':(kind==='series'||!privateMovies.length?'<p class="hint">'+(kind==='movie'?'Inicia sesión con tu código familiar o pulsa Volver a cargar para consultar las películas guardadas.':'Por ahora no hay series disponibles.')+'</p>':''));
+  +(result.length?'<section class="catalog-rail"><div class="section-head"><h2>Mi biblioteca</h2></div><div class="tile-grid">'+result.map(it=>card(it,true)).join('')+'</div></section>':(kind==='series'||!privateMovies.length?'<p class="hint">'+(kind==='movie'?'Inicia sesión con tu código familiar o pulsa Volver a cargar para consultar las películas guardadas.':(normalizeCatalogSearch(q)?'No se encontraron series para esta búsqueda.':'Por ahora no hay series disponibles.'))+'</p>':''));
 };
 const oldLoadWatchmodeCatalog=loadWatchmodeCatalog;
 loadWatchmodeCatalog=function(){if(netflixCatalogEnabled)return oldLoadWatchmodeCatalog();};
