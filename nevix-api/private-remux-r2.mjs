@@ -1,7 +1,6 @@
 import { GetObjectCommand, HeadObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
-import { createWriteStream } from 'node:fs';
+import { createServer } from 'node:http';
 import { mkdtemp, rm, stat, statfs, open as openFile } from 'node:fs/promises';
-import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,6 +22,10 @@ export function mediaToolsReady(){
 }
 
 const MAX_SIZE=6*1024*1024*1024;
+// Render Free evicts instances above 2 GB of temporary storage. Keep headroom.
+const MAX_TEMP_OUTPUT=1700*1024*1024;
+const TEMP_RESERVE=128*1024*1024;
+
 const JOBS_LIMIT=10;
 const MULTIPART_CHUNK=5*1024*1024;
 async function withRetry(operation){
@@ -94,11 +97,54 @@ async function multipartFile(client,bucket,storageOps,key,path,size,onProgress){
   },onProgress);
  }finally{await fd.close();}
 }
+// A loopback-only, capability-scoped HTTP endpoint supplies seekable R2 input.
+// FFmpeg/FFprobe request byte ranges; no source movie is copied to /tmp.
+export async function openRangeSource(client,bucket,entry){
+ const token='/'+randomUUID();
+ const server=createServer(async(req,res)=>{
+  if(req.url!==token||!['GET','HEAD'].includes(req.method)){res.writeHead(404);res.end();return;}
+  const range=req.headers.range;
+  if(range&&!/^bytes=\d+-\d*$/.test(range)){res.writeHead(416,{'Content-Range':'bytes */'+entry.size});res.end();return;}
+  const abort=new AbortController();
+  res.once('close',()=>{if(!res.writableFinished)abort.abort();});
+  try{
+   const identity=entry.etag?{IfMatch:entry.etag}:{};
+   const args={Bucket:bucket,Key:entry.key,...identity};
+   const data=await client.send(req.method==='HEAD'?new HeadObjectCommand(args):new GetObjectCommand({...args,...(range?{Range:range}:{})}),{abortSignal:abort.signal});
+   if(res.destroyed){data.Body?.destroy?.();return;}
+   if(range&&req.method==='GET'&&!data.ContentRange){data.Body?.destroy?.();throw Error('R2 range missing');}
+   const headers={'Content-Type':'application/octet-stream','Accept-Ranges':'bytes','Cache-Control':'no-store'};
+   if(Number.isFinite(data.ContentLength))headers['Content-Length']=String(data.ContentLength);
+   if(data.ContentRange)headers['Content-Range']=data.ContentRange;
+   res.writeHead(data.ContentRange?206:200,headers);
+   if(req.method==='HEAD'){res.end();return;}
+   if(!data.Body||typeof data.Body.pipe!=='function')throw Error('R2 stream missing');
+   await pipeline(data.Body,res);
+  }catch(err){
+   if(res.destroyed)return;
+   if(res.headersSent){res.destroy();return;}
+   const code=Number(err?.$metadata?.httpStatusCode);
+   res.writeHead(code===416?416:code===412?412:502);
+   res.end();
+  }
+ });
+ await new Promise((resolve,reject)=>{
+  server.once('error',reject);server.listen(0,'127.0.0.1',resolve);
+ });
+ return {url:'http://127.0.0.1:'+server.address().port+token,close:()=>new Promise(resolve=>{server.close(resolve);server.closeAllConnections?.();})};
+}
+async function readR2Range(client,bucket,entry,offset,length){
+ const response=await client.send(new GetObjectCommand({Bucket:bucket,Key:entry.key,Range:'bytes='+offset+'-'+(offset+length-1),...(entry.etag?{IfMatch:entry.etag}:{})}));
+ if(!response.ContentRange||Number(response.ContentLength)>length){response.Body?.destroy?.();throw Error('R2 no confirmó el rango solicitado.');}
+ const result=Buffer.from(await response.Body.transformToByteArray());
+ if(result.length>length)throw Error('R2 devolvió un rango inválido.');
+ return result;
+}
 const statusOf=job=>({jobId:job.jobId,phase:job.phase,percent:job.percent,completed:job.phase==='completed',failed:job.phase==='failed',message:job.message,ready:job.phase==='completed'});
 async function probe(path){
  return new Promise((resolve,reject)=>{
   execFile(FFPROBE_BIN,['-v','error','-show_entries',
-   'format=duration,format_name:stream=index,codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile:stream_disposition=attached_pic',
+   'format=duration,format_name:stream=index,codec_name,codec_type,width,height,pix_fmt,channels,channel_layout,sample_rate,duration,profile:stream_tags=language,title:stream_disposition=attached_pic',
    '-of','json',path],{timeout:90000,maxBuffer:512*1024},(err,out)=>{
    if(err)return reject(Error('FFprobe no pudo analizar el contenedor. Comprueba que el archivo de video no esté dañado.'));
    try{resolve(JSON.parse(out));}catch(_){reject(Error('FFprobe devolvió datos multimedia inválidos.'));}
@@ -106,7 +152,11 @@ async function probe(path){
  });
 }
 const firstVideo=p=>(p.streams||[]).find(x=>x.codec_type==='video'&&x.disposition?.attached_pic!==1);
-const firstAudio=p=>(p.streams||[]).find(x=>x.codec_type==='audio');
+const firstAudio=p=>{
+ const tracks=(p.streams||[]).filter(x=>x.codec_type==='audio');
+ const spanish=x=>/^(?:spa|es|esp)(?:[-_].*)?$/i.test(String(x.tags?.language||''))||/\b(?:español|spanish|castellano|latino)\b/i.test(String(x.tags?.title||''));
+ return tracks.find(spanish)||tracks[0];
+};
 const movieDuration=p=>Number(p.format?.duration||firstVideo(p)?.duration||firstAudio(p)?.duration)||0;
 const compatibleH264=p=>{
  const v=firstVideo(p);
@@ -123,7 +173,7 @@ function conversionPlan(before,filename,layout){
  const needsConversion=!/\.mp4$/i.test(filename)||layout?.needsRepair||!videoCopy||hasAudio&&(!stereoCopy||surround);
  return {videoCopy,hasAudio,stereoCopy,surround,needsConversion,sourceVideo:video.codec_name,sourceAudio:audio?.codec_name||'sin audio',sourceChannels:channels,videoIndex:video.index,audioIndex:audio?.index??null};
 }
-async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
+async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0,maxOutput=MAX_TEMP_OUTPUT){
  const args=['-hide_banner','-nostdin','-loglevel','error','-progress','pipe:2','-y','-threads','1','-i',input,
   '-map','0:'+plan.videoIndex];
  if(plan.hasAudio){
@@ -142,7 +192,7 @@ async function ffmpegConvert(input,output,plan,onProgress=()=>{},durationSec=0){
    args.push('-metadata:s:a:1','title=Envolvente 5.1','-disposition:a:1','0');
   }
  }
- args.push('-max_muxing_queue_size','2048','-movflags','+faststart','-f','mp4',output);
+ args.push('-max_muxing_queue_size','2048','-fs',String(maxOutput),'-movflags','+faststart','-f','mp4',output);
  await new Promise((resolve,reject)=>{
   const proc=spawn(FFMPEG_BIN,args,{stdio:['ignore','ignore','pipe']});
   let done=false,reason='',timedOut=false;
@@ -182,13 +232,13 @@ function validateMedia(before,after,plan){
  if(!Number.isFinite(afterSeconds)||afterSeconds<=2)return false;
  return !(beforeSeconds>2&&Math.abs(beforeSeconds-afterSeconds)>Math.max(4,beforeSeconds*0.01));
 }
-async function detectMp4Layout(path,size){
- const fd=await openFile(path,'r');
+async function detectMp4Layout(path,size,readRange=null){
+ const fd=readRange?null:await openFile(path,'r');
  let offset=0,foundMoov=false,moovBeforeMdat=false,fragmented=false,foundMdat=false,steps=0;
  try{
   while(offset<size&&steps++<128){
-   const buffer=Buffer.alloc(16);
-   const {bytesRead}=await fd.read(buffer,0,16,offset);
+   const buffer=readRange?await readRange(offset,Math.min(16,size-offset)):Buffer.alloc(16);
+   const bytesRead=readRange?buffer.length:(await fd.read(buffer,0,16,offset)).bytesRead;
    if(bytesRead<8)break;
    const atom=buffer.toString('latin1',4,8);
    let length=buffer.readUInt32BE(0);
@@ -205,7 +255,7 @@ async function detectMp4Layout(path,size){
    if(atom==='mdat'){foundMdat=true;if(foundMoov)break;}
    offset+=length;
   }
- }finally{await fd.close();}
+ }finally{if(fd)await fd.close();}
  if(!foundMoov||!foundMdat)throw Error('No se encontró un índice MP4 completo; revisa el archivo de origen.');
  return {fragmented,needsRepair:fragmented||!moovBeforeMdat,moovBeforeMdat};
 }
@@ -241,28 +291,18 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
   const task=queue.shift(),{entry,job,auto}=task;
   active=job;
   void (async()=>{
-   let directory='',lastPhase='queued';
+   let directory='',source=null,lastPhase='queued';
    try{
-    const fs=await statfs(tmpdir());
-    const free=Number(fs.bavail)*Number(fs.bsize);
-    if(free<entry.size*2.3+150*1024*1024)throw Error('No hay espacio temporal suficiente para preparar el MP4 de forma segura.');
-    directory=await mkdtemp(join(tmpdir(),'nevix-remux-'));
     const sourceExt=String(entry.key||'').match(/\.(mp4|m4v|mkv|avi|mov|webm|wmv|mpeg|mpg|ts|m2ts)$/i)?.[1]?.toLowerCase()||'video';
-    const input=join(directory,'source.'+sourceExt),output=join(directory,'compatible.mp4');
-    job.phase='downloading';job.percent=0;job.message='Analizando y descargando MP4 desde Cloudflare R2.';
-    console.log('NÉVIX R2 MP4 verification: phase=download auto='+auto+' size_mb='+Math.round(entry.size/1048576));
-    const response=await client.send(new GetObjectCommand({Bucket:bucket,Key:entry.key}));
-    if(!response?.Body||typeof response.Body.pipe!=='function')throw Error('Cloudflare R2 no entregó el archivo MP4.');
-    let downloaded=0;
-    const counter=new Transform({transform(chunk,_enc,cb){downloaded+=chunk.length;job.percent=Math.min(99,Math.floor(downloaded/entry.size*100));cb(null,chunk);}});
-    await pipeline(response.Body,counter,createWriteStream(input,{flags:'wx'}));
-    const local=await stat(input);
-    if(local.size!==entry.size)throw Error('El MP4 llegó incompleto al servidor.');
+    job.phase='downloading';job.percent=0;job.message='Leyendo el video directamente desde Cloudflare R2, sin descargar una copia temporal.';
+    source=await openRangeSource(client,bucket,entry);
+    const input=source.url;
+    console.log('NÉVIX R2 video verification: source=range_stream auto='+auto+' size_mb='+Math.round(entry.size/1048576));
     job.phase='remuxing';lastPhase='verifying';job.percent=1;job.message='Identificando códecs, pistas de audio y compatibilidad del contenedor…';
     const before=await probe(input);
     const duration=movieDuration(before);
     if(!Number.isFinite(duration)||duration<2)throw Error('No fue posible confirmar la duración del archivo de video.');
-    const layout=/\.(?:mp4|m4v)$/i.test(entry.key)?await detectMp4Layout(input,local.size):null;
+    const layout=/\.(?:mp4|m4v)$/i.test(entry.key)?await detectMp4Layout(null,entry.size,(offset,length)=>readR2Range(client,bucket,entry,offset,length)):null;
     const plan=conversionPlan(before,entry.key,layout);
     console.log('NÉVIX video inspection: auto='+auto+' format='+sourceExt+' video='+plan.sourceVideo+' audio='+plan.sourceAudio+' channels='+plan.sourceChannels+' needs_conversion='+plan.needsConversion+' video_copy='+plan.videoCopy);
     if(auto&&!plan.needsConversion){
@@ -272,10 +312,20 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
      console.log('NÉVIX video verified: auto=true conversion=false');
      return;
     }
+    const fs=await statfs(tmpdir());
+    const free=Number(fs.bavail)*Number(fs.bsize);
+    const maxOutput=Math.min(MAX_TEMP_OUTPUT,free-TEMP_RESERVE);
+    if(maxOutput<64*1024*1024)throw Error('No hay espacio temporal suficiente para preparar el MP4 de forma segura.');
+    directory=await mkdtemp(join(tmpdir(),'nevix-remux-'));
+    const output=join(directory,'compatible.mp4');
     lastPhase='remuxing';job.phase='remuxing';job.percent=1;
     job.message=plan.videoCopy?'Preparando MP4 compatible sin modificar el video. Ajustando audio cuando sea necesario.':'Convirtiendo video '+plan.sourceVideo+' a H.264 compatible. Puede requerir bastante procesamiento.';
     console.log('NÉVIX video conversion: phase=ffmpeg auto='+auto+' video_copy='+plan.videoCopy+' audio='+plan.sourceAudio+' surround='+plan.surround);
-    await ffmpegConvert(input,output,plan,pct=>{job.percent=Math.max(job.percent,pct);},duration);
+    await ffmpegConvert(input,output,plan,pct=>{job.percent=Math.max(job.percent,pct);},duration,maxOutput);
+    await source.close();source=null;
+    const outputStat=await stat(output);
+    // FFmpeg -fs can stop cleanly at the limit: never publish a truncated movie.
+    if(outputStat.size>=maxOutput-8*1024*1024)throw Error('La copia MP4 supera el límite temporal seguro de este servidor. El original permanece en R2; prepara un MP4 compatible fuera de Render.');
     const after=await probe(output);
     if(!validateMedia(before,after,plan))throw Error('La versión preparada no pasó la verificación de video, audio y duración.');
     const ready=await stat(output);
@@ -299,6 +349,7 @@ export function createPrivateRemux({client,bucket,finalize,finishWithoutRemux,on
      try{await onFailure(entry,job.message);}catch(err){console.error('NÉVIX R2 MP4 failure status save error: '+String(err?.name||'error'));}
     }
    }finally{
+    if(source){try{await source.close();}catch(_){}}
     if(directory){try{await rm(directory,{recursive:true,force:true});}catch(_){}}
     if(active?.jobId===job.jobId)active=null;
     pump();

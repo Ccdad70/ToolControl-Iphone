@@ -1,0 +1,22 @@
+name: NÉVIX R2 conversion QA
+on:
+  pull_request:
+    branches: [nevix-tv-live]
+    paths:
+      - 'nevix-api/private-remux-r2*'
+      - '.github/workflows/nevix-r2-conversion-qa.yml'
+permissions:
+  contents: read
+jobs:
+  conversion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --omit=dev
+        working-directory: nevix-api
+      - run: node --check private-remux-r2.mjs && node --test private-remux-r2.test.mjs
+        working-directory: nevix-api
