@@ -400,6 +400,16 @@ footer{color:#a88d94;border-color:#48121f}
 .nevix-film-language select{color:#fff;background:#172a26;border:1px solid #47896a;border-radius:9px;padding:8px;font-weight:700;max-width:100%}
 .nevix-film-language span{font-size:12px;color:#b2c2d3}
 </style>
+<style id="nevix-r2-library-responsive">
+#private-library-list{min-width:0;max-width:100%}
+#private-library-list .r2-library-row{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:12px;margin:8px 0;min-width:0;max-width:100%}
+#private-library-list .r2-library-info{display:block;min-width:0;max-width:100%}
+#private-library-list .r2-library-info b,#private-library-list .r2-library-info small{display:block;max-width:100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+#private-library-list .r2-library-info b{font-size:14px;line-height:1.4}
+#private-library-list .r2-library-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:8px;margin:0;min-width:0;max-width:100%}
+#private-library-list .r2-library-actions .btn{width:100%;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:center;line-height:1.35;min-height:44px;padding:9px 12px}
+@media(max-width:740px){#private-library-list .r2-library-actions{grid-template-columns:minmax(0,1fr)}}
+</style>
 </head>
 <body>
 <div class="app-shell" id="app-shell">
@@ -2241,8 +2251,8 @@ async function privateManageR2(){
      const state=names[it.status]||it.status||'Desconocido';
      const extra=it.status==='backup'?' · Respaldo, no aparece a los espectadores':it.status==='processing'?' · '+(phase?'Etapa: '+phase+' ('+(Number(job.percent)||0)+' %)':'Preparando en servidor'):it.status==='processing_failed'?' · '+String(it.validationError||'Revisa el archivo'):'';
      const title=esc(it.title||'Película sin título');
-     return '<div class="source-row" style="gap:10px;align-items:center;margin:8px 0"><span style="min-width:0;flex:1"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span>'
-       +'<div class="actions" style="flex-shrink:0;flex-wrap:wrap;gap:6px">'
+     return '<div class="source-row r2-library-row"><span class="r2-library-info"><b>'+title+'</b><small>'+esc(state+extra)+' · '+size+' MiB</small></span>'
+       +'<div class="actions r2-library-actions">'
        +(it.status==='ready'||it.status==='review'?'<button class="btn btn-sm" type="button" data-action="private-r2-edit" data-id="'+id+'">✎ Editar título y portada</button>':'')
        +(it.status==='ready'?'<button class="btn btn-sm" type="button" data-action="private-dubbing-start" data-id="'+id+'">🌐 Crear doblaje español (IA)</button>':'')
        +'<button class="btn btn-danger btn-sm" type="button" data-action="private-r2-delete" data-id="'+id+'" '+(it.status==='processing'||job?'disabled title="Espera a que termine la preparación"':'')+'>Eliminar</button></div></div>';
