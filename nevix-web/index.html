@@ -2288,9 +2288,56 @@ async function privateEditR2(id){
   +'<label class="field">Año de estreno (recomendado)<input id="private-edit-year-'+id+'" maxlength="4" inputmode="numeric" value="'+esc(item.year||'')+'" placeholder="Ej.: 2024"></label>'
   +'<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-action="private-r2-poster-preview" data-id="'+id+'">Buscar portada correcta</button><button class="btn btn-sm" type="button" data-action="private-r2-edit-cancel" data-id="'+id+'">Cancelar</button></div>'
   +'<p id="private-edit-status-'+id+'" class="hint" role="status" aria-live="polite"></p>'
-  +'<div id="private-edit-preview-'+id+'"></div>';
+  +'<div id="private-edit-preview-'+id+'"></div>'
+  +'<hr style="border:0;border-top:1px solid #ffffff25;margin:18px 0">'
+  +'<label class="field">O subir una portada desde tu galería (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" id="private-edit-manual-'+id+'"></label>'
+  +'<p class="hint">Puedes guardar una imagen propia aunque TMDB no encuentre la película. Formatos JPG, PNG o WebP.</p>'
+  +'<div id="private-edit-manual-preview-'+id+'"></div>';
  row.insertAdjacentElement('afterend',panel);
+ const manualInput=panel.querySelector('#private-edit-manual-'+id);
+ const manualPreview=panel.querySelector('#private-edit-manual-preview-'+id);
+ let selectionVersion=0;
+ manualInput.addEventListener('change',async()=>{
+  const version=++selectionVersion;
+  manualPreview.replaceChildren();
+  const file=manualInput.files?.[0];
+  if(!file)return;
+  const status=document.getElementById('private-edit-status-'+id);
+  try{
+   if(status)status.textContent='Preparando tu portada…';
+   const image=await preparePrivateManualPoster(file);
+   if(version!==selectionVersion||!panel.isConnected)return;
+   const img=document.createElement('img');img.src=image;img.alt='Vista previa de tu portada';img.style.cssText='width:150px;max-width:100%;border-radius:10px;display:block;margin:12px 0';
+   const save=document.createElement('button');save.className='btn btn-primary';save.type='button';save.textContent='✓ Guardar portada manual';
+   save.addEventListener('click',()=>{
+    save.dataset.title=document.getElementById('private-edit-title-'+id)?.value?.trim()||'';
+    save.dataset.year=document.getElementById('private-edit-year-'+id)?.value?.trim()||'';
+    void privateSaveR2Metadata(id,save,image);
+   });
+   manualPreview.append(img,save);
+   if(status)status.textContent='Revisa tu portada y pulsa Guardar portada manual.';
+  }catch(error){if(version===selectionVersion&&status)status.textContent=String(error.message||'No se pudo preparar la imagen.');}
+ });
  panel.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function preparePrivateManualPoster(file){
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024)throw Error('Selecciona una imagen JPG, PNG o WebP de hasta 15 MB.');
+ const url=URL.createObjectURL(file);
+ try{
+  const img=new Image();img.src=url;await img.decode();
+  if(!img.naturalWidth||!img.naturalHeight||img.naturalWidth*img.naturalHeight>40000000)throw Error('La imagen es demasiado grande o no es válida.');
+  const canvas=document.createElement('canvas');
+  let scale=Math.min(1,600/img.naturalWidth,900/img.naturalHeight);
+  for(let attempt=0;attempt<6;attempt++){
+   canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+   const ctx=canvas.getContext('2d');if(!ctx)throw Error('No se pudo preparar la portada.');
+   ctx.fillStyle='#111111';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+   const jpeg=canvas.toDataURL('image/jpeg',0.82);
+   if(jpeg.startsWith('data:image/jpeg;base64,')&&jpeg.length<=130000)return jpeg;
+   scale*=0.75;
+  }
+  throw Error('No se pudo reducir el tamaño de la portada. Prueba con otra imagen.');
+ }finally{URL.revokeObjectURL(url);}
 }
 async function privatePreviewR2Poster(id){
  if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
@@ -2321,13 +2368,14 @@ async function privatePreviewR2Poster(id){
   if(status)status.textContent='No se encontró una coincidencia exacta: '+String(error?.message||'Error.'); 
  }finally{if(button)button.disabled=false;}
 }
-async function privateSaveR2Metadata(id,button){
+async function privateSaveR2Metadata(id,button,manualPoster=''){
  if(!/^priv-[a-f0-9]{24}$/.test(String(id||'')))return;
  const key=document.getElementById('private-admin-key')?.value?.trim()||'';
  const title=document.getElementById('private-edit-title-'+id)?.value?.trim()||'';
  const year=document.getElementById('private-edit-year-'+id)?.value?.trim()||'';
  const status=document.getElementById('private-edit-status-'+id);
  if(!key){toast('Introduce el código de administración.');return;}
+ if(title.length<2||title.length>130||year&&!/^(19|20)\d{2}$/.test(year)){if(status)status.textContent='Escribe un título válido y, opcionalmente, un año de cuatro cifras.';return;}
  if(title!==button?.dataset.title||year!==button?.dataset.year){
   if(status)status.textContent='Modificaste el título o año. Pulsa nuevamente «Buscar portada correcta» antes de guardar.';
   return;
@@ -2335,7 +2383,7 @@ async function privateSaveR2Metadata(id,button){
  if(button)button.disabled=true;
  if(status)status.textContent='Guardando título, año y portada en NÉVIX…';
  try{
-  const answer=await privateRequest('/api/private/approve',key,true,'POST',{id,title,year});
+  const answer=await privateRequest('/api/private/approve',key,true,'POST',{id,title,year,...(manualPoster?{manualPoster}:{})});
   if(!answer?.ok)throw Error('Render no confirmó la actualización.');
   if(privateFamilyCode)await loadPrivateMovies();
   await privateManageR2();

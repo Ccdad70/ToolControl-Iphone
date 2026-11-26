@@ -88,11 +88,11 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
  }
  const auth=(req,key)=>safeSame(string(req.headers[key==='admin'?'x-nevix-admin-key':'x-nevix-access-code']),key==='admin'?admin:family);
  const reply=(res,code,data)=>send(res,code,data);
- async function body(req){
+ async function body(req,maxBytes=8192){
   let size=0,parts=[];
   for await (const part of req){
    size+=part.length;
-   if(size>8192)throw {status:413,error:'too_large',message:'La solicitud es demasiado grande.'};
+   if(size>maxBytes)throw {status:413,error:'too_large',message:'La solicitud es demasiado grande.'};
    parts.push(part);
   }
   try{return JSON.parse(Buffer.concat(parts).toString('utf8')||'{}');}
@@ -440,13 +440,24 @@ export function createPrivateFilmService({send,tmdbTitle,tmdbSearchPoster,origin
     return reply(res,200,{ok:true,id:entry.id,title:requestedTitle,year:requestedYear,image:found.image,description:found.overview||'',matchedTitle:found.matchedTitle||requestedTitle,matchedYear:found.matchedYear||'',currentTitle:entry.title});
    }
    if(url.pathname==='/api/private/approve'&&req.method==='POST'){
-    const arg=await body(req),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
+    const arg=await body(req,140000),rows=await sync(true),entry=rows.find(x=>x.id===string(arg.id));
     if(!entry||!SUPPORTED.test(entry.key))return reply(res,404,{error:'not_found'});
     if(!['ready','review'].includes(entry.status)||!OUTPUT_MP4.test(entry.key))return reply(res,409,{error:'not_editable',message:'Primero debe completarse la conversión de esta película a MP4.'});
     const newTitle=string(arg.title).slice(0,130),newYear=string(arg.year).slice(0,4);
     if(newTitle.length<2||newYear&&!/^(19|20)\d{2}$/.test(newYear))return reply(res,400,{error:'invalid_metadata'});
-    const meta=await tmdbSearchPoster(newTitle,newYear,'movie');
-    if(!meta?.image)return reply(res,422,{error:'no_exact_match',message:'No se encontró una portada que coincida con ese título y año.'});
+    let meta;
+    if(Object.prototype.hasOwnProperty.call(arg,'manualPoster')){
+     const image=arg.manualPoster;
+     if(typeof image!=='string'||image.length>130000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(image))
+      return reply(res,400,{error:'invalid_poster',message:'La portada manual no es una imagen JPEG válida o supera el tamaño permitido.'});
+     const encoded=image.slice('data:image/jpeg;base64,'.length),bytes=Buffer.from(encoded,'base64');
+     if(bytes.length<4||bytes.toString('base64')!==encoded||bytes[0]!==255||bytes[1]!==216||bytes[bytes.length-2]!==255||bytes[bytes.length-1]!==217)
+      return reply(res,400,{error:'invalid_poster',message:'La portada manual no es una imagen JPEG válida.'});
+     meta={image,overview:entry.description||''};
+    }else{
+     meta=await tmdbSearchPoster(newTitle,newYear,'movie');
+     if(!meta?.image)return reply(res,422,{error:'no_exact_match',message:'No se encontró una portada que coincida con ese título y año. Puedes subir una portada manual.'});
+    }
     const previousTitle=entry.title;
     entry.title=newTitle;entry.year=newYear;entry.image=meta.image;entry.description=meta.overview||'';entry.status='ready';
     await saveIndex();cacheUntil=Date.now()+90000;
